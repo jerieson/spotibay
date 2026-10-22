@@ -195,21 +195,21 @@ Server → client:
 
 ### Phase 1 — Docker, database, Redis
 
-- [ ] `docker-compose.dev.yml`: postgres (current stable major, alpine image) and redis (alpine) with ports exposed to localhost only
-- [ ] Drizzle schema for all tables in the schema section, first migration generated
-- [ ] Redis client module
-- [ ] Settings service: loads `app_settings`, fills missing keys from defaults, caches in memory, `get(key)` typed by key, `set(key, value, adminId)` validates with Zod, writes, bumps version, emits an internal event
-- [ ] Production `docker-compose.yml`: `caddy`, `api`, `postgres`, `redis`
+- [x] `docker-compose.dev.yml`: postgres (current stable major, alpine image) and redis (alpine) with ports exposed to localhost only
+- [x] Drizzle schema for all tables in the schema section, first migration generated
+- [x] Redis client module
+- [x] Settings service: loads `app_settings`, fills missing keys from defaults, caches in memory, `get(key)` typed by key, `set(key, value, adminId)` validates with Zod, writes, bumps version, emits an internal event
+- [x] Production `docker-compose.yml`: `caddy`, `api`, `postgres`, `redis`
   - Only Caddy publishes ports 80 and 443
   - Named volumes: `pgdata`, `redisdata`, `caddy_data`, `caddy_config`
   - Memory limits: postgres 384m, redis 96m, api 384m, caddy 64m
   - Postgres command flags: `shared_buffers=128MB`, `max_connections=30`
   - Redis: `--maxmemory 64mb --maxmemory-policy volatile-lru --appendonly yes`
   - Healthchecks on all services; api waits for healthy postgres and redis
-- [ ] `apps/api/Dockerfile`: multi-stage, node LTS alpine, `pnpm deploy` for prod deps only, runs migrations on start then the server, non-root user
-- [ ] Web Dockerfile stage that builds the SPA and copies `dist` into a Caddy image
-- [ ] `caddy/Caddyfile`: `{$DOMAIN}`, serve SPA with fallback to `index.html`, reverse proxy `/api/*` and `/socket.io/*` to `api:3000`, security headers, gzip/zstd
-- [ ] `.env.example` as in the plan
+- [x] `apps/api/Dockerfile`: multi-stage, node LTS alpine, `pnpm deploy` for prod deps only, runs migrations on start then the server, non-root user
+- [x] Web Dockerfile stage that builds the SPA and copies `dist` into a Caddy image
+- [x] `caddy/Caddyfile`: `{$DOMAIN}`, serve SPA with fallback to `index.html`, reverse proxy `/api/*` and `/socket.io/*` to `api:3000`, security headers, gzip/zstd
+- [x] `.env.example` as in the plan
 
 **Done when:** `docker compose up --build` with `DOMAIN=localhost` serves the app over HTTPS locally, `/api/health` reports db and redis ok, and the settings service has unit tests passing.
 

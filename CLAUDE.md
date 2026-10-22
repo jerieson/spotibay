@@ -20,7 +20,7 @@ The full build plan is in `PLAN.md`. Work one phase at a time. Do not start a ph
 
 ## Commands
 
-- `pnpm dev` — run web and api in watch mode (Postgres and Redis via `docker compose -f docker-compose.dev.yml up -d`)
+- `pnpm dev` — run web and api in watch mode. Postgres and Redis via `docker compose -f docker-compose.dev.yml up -d`; the api reads `apps/api/.env` (copy from `apps/api/.env.example`; set `POSTGRES_PORT`/`REDIS_PORT` in the shell when running compose if 5432/6379 are taken)
 - `pnpm build` — build all packages
 - `pnpm test` — run all tests
 - `pnpm lint` / `pnpm typecheck`
