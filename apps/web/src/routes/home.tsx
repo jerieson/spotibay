@@ -1,11 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchHealth } from '@/lib/api';
+import { ArrowRight, Users } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { roomCodeSchema } from '@spotibay/shared';
+import { CreateRoomDialog } from '@/components/room/create-room-dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { fetchRooms } from '@/lib/api';
 
 export function HomePage() {
-  const health = useQuery({ queryKey: ['health'], queryFn: fetchHealth });
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <section className="relative overflow-hidden rounded-3xl border bg-card p-6 sm:p-10">
         <div className="pointer-events-none absolute -top-24 -right-24 size-72 rounded-full bg-volt/15 blur-3xl" />
         <p className="text-xs font-semibold tracking-widest text-volt uppercase">Listen in sync</p>
@@ -17,15 +22,87 @@ export function HomePage() {
         <p className="mt-3 max-w-md text-muted-foreground">
           Spin up a room, share the code, and queue YouTube tracks together.
         </p>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <CreateRoomDialog />
+          <JoinByCode />
+        </div>
       </section>
-      <section className="rounded-2xl border bg-card p-4 text-card-foreground">
-        <h2 className="mb-1 text-sm text-muted-foreground">API health</h2>
-        <p data-testid="health" className="font-mono">
-          {health.isPending && 'checking…'}
-          {health.isError && 'unreachable'}
-          {health.isSuccess && `status: ${health.data.status}`}
-        </p>
-      </section>
+      <PublicRooms />
     </div>
+  );
+}
+
+function JoinByCode() {
+  const navigate = useNavigate();
+  const [value, setValue] = useState('');
+  const parsed = roomCodeSchema.safeParse(value);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (parsed.success) void navigate(`/r/${parsed.data}`);
+  }
+
+  return (
+    <form onSubmit={submit} className="flex gap-2">
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Room code"
+        aria-label="Room code"
+        maxLength={6}
+        autoCapitalize="characters"
+        autoComplete="off"
+        className="h-10 w-36 rounded-full font-mono tracking-widest uppercase"
+      />
+      <Button
+        type="submit"
+        variant="secondary"
+        size="lg"
+        className="rounded-full"
+        disabled={!parsed.success}
+      >
+        Join <ArrowRight />
+      </Button>
+    </form>
+  );
+}
+
+function PublicRooms() {
+  const rooms = useQuery({ queryKey: ['rooms'], queryFn: fetchRooms, refetchInterval: 10_000 });
+
+  return (
+    <section className="space-y-3">
+      <h2 className="font-display text-xl font-bold">Public rooms</h2>
+      {rooms.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {rooms.isError && <p className="text-sm text-destructive">Couldn&apos;t load rooms.</p>}
+      {rooms.isSuccess && rooms.data.length === 0 && (
+        <p className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+          No public rooms yet. Create the first one!
+        </p>
+      )}
+      {rooms.isSuccess && rooms.data.length > 0 && (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {rooms.data.map((room) => (
+            <li key={room.code}>
+              <Link
+                to={`/r/${room.code}`}
+                className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition-colors hover:border-volt/60"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{room.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {room.nowPlaying ? room.nowPlaying.title : 'Nothing playing'}
+                  </p>
+                </div>
+                <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                  <Users className="size-4" /> {room.memberCount}
+                </span>
+                <span className="font-mono text-xs tracking-widest text-volt">{room.code}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

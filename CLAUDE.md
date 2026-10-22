@@ -22,7 +22,7 @@ The full build plan is in `PLAN.md`. Work one phase at a time. Do not start a ph
 
 - `pnpm dev` — run web and api in watch mode. Postgres and Redis via `docker compose -f docker-compose.dev.yml up -d`; the api reads `apps/api/.env` (copy from `apps/api/.env.example`; set `POSTGRES_PORT`/`REDIS_PORT` in the shell when running compose if 5432/6379 are taken)
 - `pnpm build` — build all packages
-- `pnpm test` — run all tests
+- `pnpm test` — run all tests. The api socket/REST integration tests need the dev Postgres and Redis running; they read `DATABASE_URL`/`REDIS_URL` from `apps/api/.env` and use a separate `spotibay_test` database and Redis db 15, so dev data is untouched
 - `pnpm lint` / `pnpm typecheck`
 - `pnpm --filter api db:generate` — generate a migration from schema changes
 - `pnpm --filter api db:migrate` — apply migrations

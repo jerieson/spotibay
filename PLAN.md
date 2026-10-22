@@ -233,13 +233,13 @@ Server → client:
 
 ### Phase 3 — Rooms and presence
 
-- [ ] REST: `POST /api/rooms` (respect `features.guestRoomCreation`, `limits.maxActiveRooms`), `GET /api/rooms` (public rooms with member counts and now playing), `GET /api/rooms/:code`, `PATCH /api/rooms/:code` (host), `POST /api/rooms/:code/close` (host)
-- [ ] Private rooms with optional password (argon2 via `@node-rs/argon2`)
-- [ ] Socket.IO server with cookie auth, typed events from shared
-- [ ] `room:join`: checks password, ban, `limits.maxUsersPerRoom`; adds to `room:{id}:members`; emits `room:state` to the joiner and `room:members` to the room. Multiple tabs from the same user count once (`socketCount`)
-- [ ] Roles: host, dj, listener. Host can set roles and transfer host. If the host disconnects for more than 60 s, host passes to the longest-present member
-- [ ] Rooms with no members for 30 minutes are closed automatically
-- [ ] Web: home page (create room, join by code, public room list), room page shell with member list (avatars, names, role badges), invite link copy, join/leave toasts
+- [x] REST: `POST /api/rooms` (respect `features.guestRoomCreation`, `limits.maxActiveRooms`), `GET /api/rooms` (public rooms with member counts and now playing), `GET /api/rooms/:code`, `PATCH /api/rooms/:code` (host), `POST /api/rooms/:code/close` (host)
+- [x] Private rooms with optional password (argon2 via `@node-rs/argon2`)
+- [x] Socket.IO server with cookie auth, typed events from shared
+- [x] `room:join`: checks password, ban, `limits.maxUsersPerRoom`; adds to `room:{id}:members`; emits `room:state` to the joiner and `room:members` to the room. Multiple tabs from the same user count once (`socketCount`)
+- [x] Roles: host, dj, listener. Host can set roles and transfer host. If the host disconnects for more than 60 s, host passes to the longest-present member
+- [x] Rooms with no members for 30 minutes are closed automatically
+- [x] Web: home page (create room, join by code, public room list), room page shell with member list (avatars, names, role badges), invite link copy, join/leave toasts
 
 **Done when:** two browsers can create/join a room, see each other in the member list, host transfer works on disconnect. Socket integration tests cover join, password, capacity, and host transfer.
 

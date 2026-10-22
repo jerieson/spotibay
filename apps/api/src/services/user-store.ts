@@ -1,8 +1,9 @@
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { bans, users } from '../db/schema.js';
+import { bans, rooms, users } from '../db/schema.js';
 import type { UserRecord, UserStore } from './identity.js';
 import type { BanStore } from './bans.js';
+import type { RoomRow, RoomStore } from './rooms.js';
 
 const columns = {
   id: users.id,
@@ -55,6 +56,28 @@ export function createBanStore(db: Db): BanStore {
         .where(and(or(...targets), or(isNull(bans.expiresAt), gt(bans.expiresAt, new Date()))))
         .limit(1);
       return row ?? null;
+    },
+  };
+}
+
+export function createRoomStore(db: Db): RoomStore {
+  const one = async (rows: Promise<RoomRow[]>) => (await rows)[0] ?? null;
+  return {
+    async insert(input) {
+      const rows = await db.insert(rooms).values(input).onConflictDoNothing().returning();
+      return rows[0] ?? null;
+    },
+    findByCode: (code) => one(db.select().from(rooms).where(eq(rooms.code, code)).limit(1)),
+    findById: (id) => one(db.select().from(rooms).where(eq(rooms.id, id)).limit(1)),
+    listOpen: () => db.select().from(rooms).where(isNull(rooms.closedAt)),
+    update: (id, patch) => one(db.update(rooms).set(patch).where(eq(rooms.id, id)).returning()),
+    async close(id) {
+      const rows = await db
+        .update(rooms)
+        .set({ closedAt: new Date() })
+        .where(and(eq(rooms.id, id), isNull(rooms.closedAt)))
+        .returning({ id: rooms.id });
+      return rows.length > 0;
     },
   };
 }

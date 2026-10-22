@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import { RecoveryCodeDialog } from '@/components/recovery-code-dialog';
+import { Toaster } from '@/components/ui/sonner';
 import { PlayerDock } from './player-dock';
 import { TopBar } from './top-bar';
 
@@ -12,6 +13,7 @@ export function AppShell() {
       </main>
       <PlayerDock />
       <RecoveryCodeDialog />
+      <Toaster />
     </div>
   );
 }

@@ -2,8 +2,12 @@ import {
   healthResponseSchema,
   meResponseSchema,
   recoveryCodeResponseSchema,
+  roomListResponseSchema,
+  roomResponseSchema,
   sessionResponseSchema,
+  type CreateRoomBody,
   type HealthResponse,
+  type RoomSummary,
   type SessionResponse,
   type UpdateMeBody,
   type User,
@@ -65,4 +69,17 @@ export async function regenerateRecoveryCode(): Promise<string> {
 export async function updateMe(body: UpdateMeBody): Promise<User> {
   const res = await request(meResponseSchema, '/api/me', { method: 'PATCH', body });
   return res.user;
+}
+
+export async function createRoom(body: CreateRoomBody): Promise<RoomSummary> {
+  const res = await request(roomResponseSchema, '/api/rooms', { method: 'POST', body });
+  return res.room;
+}
+
+export async function fetchRooms(): Promise<RoomSummary[]> {
+  return (await request(roomListResponseSchema, '/api/rooms')).rooms;
+}
+
+export async function fetchRoom(code: string): Promise<RoomSummary> {
+  return (await request(roomResponseSchema, `/api/rooms/${encodeURIComponent(code)}`)).room;
 }

@@ -1,9 +1,11 @@
 import express, { type ErrorRequestHandler } from 'express';
 import type { HealthResponse } from '@spotibay/shared';
 import { attachUser, banGuard } from './middleware/session.js';
+import { createRoomsRouter } from './routes/rooms.js';
 import { createSessionRouter } from './routes/session.js';
 import type { BanStore } from './services/bans.js';
 import type { IdentityService } from './services/identity.js';
+import type { RoomService } from './services/rooms.js';
 
 export interface HealthChecks {
   db: () => Promise<unknown>;
@@ -16,6 +18,8 @@ export interface AppDeps {
   identity?: IdentityService;
   bans?: BanStore;
   wordFilter?: () => readonly string[];
+  /** Room routes are mounted when this is provided (requires `identity`). */
+  rooms?: RoomService;
   secureCookie?: boolean;
 }
 
@@ -46,6 +50,7 @@ export function createApp({
   identity,
   bans,
   wordFilter,
+  rooms,
   secureCookie = true,
 }: AppDeps = {}) {
   const app = express();
@@ -71,6 +76,7 @@ export function createApp({
       '/api',
       createSessionRouter({ identity, wordFilter: wordFilter ?? (() => []), secureCookie }),
     );
+    if (rooms) app.use('/api', createRoomsRouter({ rooms }));
   }
 
   app.use(errorHandler);
