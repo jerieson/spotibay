@@ -248,11 +248,11 @@ Server → client:
 
 ### Phase 4 — Playback sync (paste a link)
 
-- [ ] YouTube service: `parseVideoId(url)` supporting `youtube.com/watch?v=`, `youtu.be/`, `music.youtube.com/watch?v=`, `youtube.com/shorts/`, raw 11-char IDs; `getVideos(ids[])` via `videos.list` (`part=snippet,contentDetails,status`), parse ISO 8601 duration, upsert `tracks`; record quota units
-- [ ] `queue:add` with a URL: validate, check `limits.maxTrackDurationSec`, `status.embeddable`, per-user and total queue limits
-- [ ] Playback service implementing the sync algorithm: play/pause/seek/skip (host/DJ), server-side end timer, advance queue, write `listen_history`, rebuild timers from Redis on startup
-- [ ] Web: `useYouTubePlayer` hook wrapping the IFrame API (load script once, create player, expose state and controls); `lib/time-sync.ts` for clock offset; drift correction loop; "Join audio" overlay; now-playing card (thumbnail, title, channel, progress bar, who added it); host/DJ controls; local volume slider (not synced); "Resync" button
-- [ ] Handle player errors with `playback:reportUnavailable`
+- [x] YouTube service: `parseVideoId(url)` supporting `youtube.com/watch?v=`, `youtu.be/`, `music.youtube.com/watch?v=`, `youtube.com/shorts/`, raw 11-char IDs; `getVideos(ids[])` via `videos.list` (`part=snippet,contentDetails,status`), parse ISO 8601 duration, upsert `tracks`; record quota units
+- [x] `queue:add` with a URL: validate, check `limits.maxTrackDurationSec`, `status.embeddable`, per-user and total queue limits
+- [x] Playback service implementing the sync algorithm: play/pause/seek/skip (host/DJ), server-side end timer, advance queue, write `listen_history`, rebuild timers from Redis on startup
+- [x] Web: `useYouTubePlayer` hook wrapping the IFrame API (load script once, create player, expose state and controls); `lib/time-sync.ts` for clock offset; drift correction loop; "Join audio" overlay; now-playing card (thumbnail, title, channel, progress bar, who added it); host/DJ controls; local volume slider (not synced); "Resync" button
+- [x] Handle player errors with `playback:reportUnavailable`
 
 **Done when:** in two browsers (and one phone), adding a pasted link plays it on all clients within about 1 s of each other; pause/seek/skip propagate; a late joiner starts at the right position; the next track starts automatically. Unit tests for `parseVideoId`, duration parsing, and the playback service position math.
 

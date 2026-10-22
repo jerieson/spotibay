@@ -18,6 +18,14 @@ import {
 import { createApp } from '../../src/app.js';
 import * as schema from '../../src/db/schema.js';
 import { createIdentityService } from '../../src/services/identity.js';
+import { createPlaybackService } from '../../src/services/playback.js';
+import { createPlaybackStore } from '../../src/services/playback-store.js';
+import {
+  createQueueStore,
+  createQuotaStore,
+  createTrackStore,
+} from '../../src/services/queue-store.js';
+import { createYouTubeService } from '../../src/services/youtube.js';
 import { createPresence } from '../../src/services/presence.js';
 import { createRoomLifecycle } from '../../src/services/room-lifecycle.js';
 import { createRoomService } from '../../src/services/rooms.js';
@@ -54,6 +62,16 @@ async function ensureTestDatabase(): Promise<void> {
 
 export type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
+/** Canned `videos.list` data for the fake YouTube API: id -> details. */
+export interface FakeVideo {
+  title?: string;
+  durationSec: number;
+  embeddable?: boolean;
+}
+
+const isoDuration = (sec: number) =>
+  `PT${Math.floor(sec / 3600)}H${Math.floor((sec % 3600) / 60)}M${sec % 60}S`;
+
 export interface HarnessOptions {
   hostGraceMs?: number;
   emptyTtlMs?: number;
@@ -69,7 +87,7 @@ export async function createHarness(options: HarnessOptions = {}) {
   await migrate(db, { migrationsFolder });
   const redis = new Redis(withPath(baseRedisUrl, `/${TEST_REDIS_DB}`));
   await redis.flushdb();
-  await db.execute('truncate table users, admins cascade');
+  await db.execute('truncate table users, admins, tracks, api_quota_usage cascade');
 
   const settings = createSettingsService(
     { loadAll: async () => new Map(), upsert: async () => undefined },
@@ -83,7 +101,51 @@ export async function createHarness(options: HarnessOptions = {}) {
   });
   const bans = createBanStore(db);
   const presence = createPresence(redis);
-  const rooms = createRoomService({ store: createRoomStore(db), presence, settings });
+  const playbackStore = createPlaybackStore(redis);
+  const rooms = createRoomService({
+    store: createRoomStore(db),
+    presence,
+    settings,
+    nowPlaying: playbackStore.nowPlaying,
+  });
+  const videos = new Map<string, FakeVideo>();
+  const youtubeCalls: string[][] = [];
+  const fakeFetch = (async (input: URL | string) => {
+    const ids = (new URL(input).searchParams.get('id') ?? '').split(',');
+    youtubeCalls.push(ids);
+    const items = ids.flatMap((id) => {
+      const v = videos.get(id);
+      return v
+        ? [
+            {
+              id,
+              snippet: {
+                title: v.title ?? `Track ${id}`,
+                channelTitle: 'Test Channel',
+                thumbnails: { medium: { url: `https://i.ytimg.com/vi/${id}/mqdefault.jpg` } },
+              },
+              contentDetails: { duration: isoDuration(v.durationSec) },
+              status: { embeddable: v.embeddable ?? true, privacyStatus: 'public' },
+            },
+          ]
+        : [];
+    });
+    return new Response(JSON.stringify({ items }), { status: 200 });
+  }) as typeof fetch;
+  const youtube = createYouTubeService({
+    apiKey: 'test-key',
+    tracks: createTrackStore(db),
+    quota: createQuotaStore(db),
+    fetch: fakeFetch,
+  });
+  const playback = createPlaybackService({
+    store: playbackStore,
+    queue: createQueueStore(db),
+    youtube,
+    presence,
+    rooms,
+    settings,
+  });
   const lifecycle = createRoomLifecycle({
     rooms,
     presence,
@@ -99,7 +161,12 @@ export async function createHarness(options: HarnessOptions = {}) {
     rooms,
     presence,
     lifecycle,
+    playback,
     maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
+    syncConfig: () => ({
+      driftThresholdMs: settings.get('sync.driftThresholdMs'),
+      checkIntervalMs: settings.get('sync.checkIntervalMs'),
+    }),
   });
   await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
@@ -141,6 +208,7 @@ export async function createHarness(options: HarnessOptions = {}) {
 
   async function close() {
     lifecycle.stop();
+    playback.stop();
     for (const s of sockets) s.disconnect();
     // Disconnects trigger presence cleanup on the server; let it finish before the stores go away.
     for (let i = 0; i < 100 && (await io.fetchSockets()).length > 0; i++) await sleep(10);
@@ -150,7 +218,20 @@ export async function createHarness(options: HarnessOptions = {}) {
     await pool.end();
   }
 
-  return { baseUrl, db, redis, settings, rooms, presence, guest, connect, close };
+  return {
+    baseUrl,
+    db,
+    redis,
+    settings,
+    rooms,
+    presence,
+    playback,
+    videos,
+    youtubeCalls,
+    guest,
+    connect,
+    close,
+  };
 }
 
 export type Harness = Awaited<ReturnType<typeof createHarness>>;

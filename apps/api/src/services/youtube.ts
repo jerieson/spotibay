@@ -1,0 +1,162 @@
+import { VIDEO_ID_PATTERN, type Track } from '@spotibay/shared';
+import { z } from 'zod';
+
+const VIDEOS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/videos';
+/** `videos.list` accepts at most 50 ids per call and costs 1 quota unit per call. */
+const VIDEOS_BATCH = 50;
+const VIDEOS_LIST_COST = 1;
+/** Stored track details are reused for this long before asking YouTube again. */
+const TRACK_TTL_MS = 24 * 60 * 60 * 1000;
+
+export interface StoredTrack extends Track {
+  embeddable: boolean;
+  fetchedAt: Date;
+}
+
+export interface TrackStore {
+  findMany(videoIds: string[]): Promise<StoredTrack[]>;
+  upsertMany(tracks: StoredTrack[]): Promise<void>;
+  markUnembeddable(videoId: string): Promise<void>;
+}
+
+export interface QuotaStore {
+  /** Adds to the counters for `date` (YYYY-MM-DD, Pacific Time). */
+  add(date: string, units: number, searchCalls: number): Promise<void>;
+}
+
+export type YouTubeErrorCode = 'not_configured' | 'api_error';
+
+export class YouTubeError extends Error {
+  constructor(
+    readonly code: YouTubeErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'YouTubeError';
+  }
+}
+
+const HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com']);
+
+/** Extracts the 11-character video id from a YouTube link or a bare id; `null` if there is none. */
+export function parseVideoId(input: string): string | null {
+  const text = input.trim();
+  if (VIDEO_ID_PATTERN.test(text)) return text;
+  let url: URL;
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  const host = url.hostname.toLowerCase();
+  const segments = url.pathname.split('/').filter(Boolean);
+  let candidate: string | null | undefined;
+  if (host === 'youtu.be') {
+    candidate = segments[0];
+  } else if (HOSTS.has(host)) {
+    if (segments[0] === 'watch') candidate = url.searchParams.get('v');
+    else if (segments[0] === 'shorts') candidate = segments[1];
+  }
+  return candidate && VIDEO_ID_PATTERN.test(candidate) ? candidate : null;
+}
+
+/** ISO 8601 duration as returned by YouTube (`PT1H2M3S`, `P1DT2H`, `P0D` for live) to whole seconds. */
+export function parseIsoDuration(value: string): number | null {
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value);
+  if (!match || value === 'P' || value.endsWith('T')) return null;
+  const [days = 0, hours = 0, minutes = 0, seconds = 0] = match.slice(1).map((n) => Number(n ?? 0));
+  return days * 86_400 + hours * 3600 + minutes * 60 + seconds;
+}
+
+/** The date quota resets on: midnight Pacific Time. */
+export function quotaDate(now: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(now);
+}
+
+const videosResponseSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string(),
+        snippet: z.object({
+          title: z.string(),
+          channelTitle: z.string(),
+          thumbnails: z
+            .record(z.string(), z.object({ url: z.string() }))
+            .optional()
+            .default({}),
+        }),
+        contentDetails: z.object({ duration: z.string() }),
+        status: z
+          .object({ embeddable: z.boolean().optional(), privacyStatus: z.string().optional() })
+          .optional(),
+      }),
+    )
+    .default([]),
+});
+
+export interface YouTubeServiceDeps {
+  apiKey: string | undefined;
+  tracks: TrackStore;
+  quota: QuotaStore;
+  fetch?: typeof fetch;
+  now?: () => Date;
+}
+
+export function createYouTubeService({
+  apiKey,
+  tracks,
+  quota,
+  fetch: fetchImpl = fetch,
+  now = () => new Date(),
+}: YouTubeServiceDeps) {
+  async function fetchVideos(ids: string[]): Promise<StoredTrack[]> {
+    if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
+    const url = new URL(VIDEOS_ENDPOINT);
+    url.searchParams.set('part', 'snippet,contentDetails,status');
+    url.searchParams.set('id', ids.join(','));
+    url.searchParams.set('key', apiKey);
+    const res = await fetchImpl(url);
+    // A failed call may still have cost quota, so count every request that was made.
+    await quota.add(quotaDate(now()), VIDEOS_LIST_COST, 0);
+    if (!res.ok) throw new YouTubeError('api_error', `YouTube API returned ${res.status}`);
+    const parsed = videosResponseSchema.safeParse(await res.json());
+    if (!parsed.success) throw new YouTubeError('api_error', 'Unexpected YouTube API response');
+    const fetchedAt = now();
+    return parsed.data.items.map((item) => {
+      const thumbs = item.snippet.thumbnails;
+      const thumb = thumbs.medium ?? thumbs.high ?? thumbs.default ?? Object.values(thumbs)[0];
+      return {
+        videoId: item.id,
+        title: item.snippet.title,
+        channelTitle: item.snippet.channelTitle,
+        thumbnailUrl: thumb?.url ?? `https://i.ytimg.com/vi/${item.id}/mqdefault.jpg`,
+        durationSec: parseIsoDuration(item.contentDetails.duration) ?? 0,
+        embeddable: item.status?.embeddable !== false && item.status?.privacyStatus !== 'private',
+        fetchedAt,
+      };
+    });
+  }
+
+  /** Details for the given videos, from the track table when fresh, else from `videos.list`. Unknown ids are absent. */
+  async function getVideos(videoIds: string[]): Promise<Map<string, StoredTrack>> {
+    const ids = [...new Set(videoIds)].filter((id) => VIDEO_ID_PATTERN.test(id));
+    const result = new Map<string, StoredTrack>();
+    const cutoff = now().getTime() - TRACK_TTL_MS;
+    for (const track of await tracks.findMany(ids)) {
+      if (track.fetchedAt.getTime() >= cutoff) result.set(track.videoId, track);
+    }
+    const missing = ids.filter((id) => !result.has(id));
+    for (let i = 0; i < missing.length; i += VIDEOS_BATCH) {
+      const fetched = await fetchVideos(missing.slice(i, i + VIDEOS_BATCH));
+      await tracks.upsertMany(fetched);
+      for (const track of fetched) result.set(track.videoId, track);
+    }
+    return result;
+  }
+
+  return { getVideos, markUnembeddable: tracks.markUnembeddable };
+}
+
+export type YouTubeService = ReturnType<typeof createYouTubeService>;

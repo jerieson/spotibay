@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { avatarSchema } from './identity.js';
+import { playbackStateSchema, queueItemSchema, syncConfigSchema } from './playback.js';
 
 /** No 0/O/1/I so codes survive being read aloud. */
 export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -95,5 +96,9 @@ export const roomStateSchema = z.object({
   room: roomSchema,
   members: z.array(memberSchema),
   you: z.object({ userId: z.string(), role: roomRoleSchema }),
+  playback: playbackStateSchema,
+  /** Upcoming items; the one playing now is `playback.item`. */
+  queue: z.array(queueItemSchema),
+  sync: syncConfigSchema,
 });
 export type RoomState = z.infer<typeof roomStateSchema>;

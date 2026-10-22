@@ -8,10 +8,12 @@ import {
   type ServerToClientEvents,
   type SocketErrorCode,
   type RoomState,
+  type SyncConfig,
 } from '@spotibay/shared';
 import { readCookie } from '../middleware/session.js';
 import type { BanStore } from '../services/bans.js';
 import type { IdentityService, UserRecord } from '../services/identity.js';
+import { PlaybackError, type PlaybackService } from '../services/playback.js';
 import type { Presence } from '../services/presence.js';
 import type { RoomLifecycle } from '../services/room-lifecycle.js';
 import { RoomError, toRoom, type RoomRow, type RoomService } from '../services/rooms.js';
@@ -39,7 +41,9 @@ export interface SocketServerDeps {
   rooms: RoomService;
   presence: Presence;
   lifecycle: RoomLifecycle;
+  playback: PlaybackService;
   maxUsersPerRoom: () => number;
+  syncConfig: () => SyncConfig;
   onError?: (err: unknown) => void;
 }
 
@@ -54,7 +58,15 @@ function clientIp(req: IncomingMessage, fallback: string): string {
 }
 
 export function createSocketServer(deps: SocketServerDeps) {
-  const { identity, bans, rooms, presence, lifecycle, onError = (e) => console.error(e) } = deps;
+  const {
+    identity,
+    bans,
+    rooms,
+    presence,
+    lifecycle,
+    playback,
+    onError = (e) => console.error(e),
+  } = deps;
   const io = new Server<
     ClientToServerEvents,
     ServerToClientEvents,
@@ -102,6 +114,10 @@ export function createSocketServer(deps: SocketServerDeps) {
         fail(socket, socketCodeFor(err), err.message);
         return;
       }
+      if (err instanceof PlaybackError) {
+        fail(socket, err.code, err.message);
+        return;
+      }
       onError(err);
       fail(socket, 'internal_error', 'Something went wrong');
     });
@@ -131,7 +147,16 @@ export function createSocketServer(deps: SocketServerDeps) {
   async function roomStateFor(row: RoomRow, userId: string): Promise<RoomState | null> {
     const members = await presence.list(row.id);
     const you = members.find((m) => m.userId === userId);
-    return you ? { room: toRoom(row), members, you: { userId, role: you.role } } : null;
+    if (!you) return null;
+    const { playback: state, queue } = await playback.snapshot(row.id);
+    return {
+      room: toRoom(row),
+      members,
+      you: { userId, role: you.role },
+      playback: state,
+      queue,
+      sync: deps.syncConfig(),
+    };
   }
 
   async function broadcastMembers(roomId: string) {
@@ -257,9 +282,75 @@ export function createSocketServer(deps: SocketServerDeps) {
       });
     });
 
+    /** A handler that runs `fn` for a member who may control playback (host or DJ). */
+    function control(fn: (roomId: string) => Promise<void>) {
+      return () => {
+        enqueue(socket, async () => {
+          const current = await currentRoom(socket);
+          if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+          if (current.role === 'listener') {
+            return fail(socket, 'forbidden', 'Only the host and DJs can do that');
+          }
+          await fn(current.row.id);
+        });
+      };
+    }
+    socket.on(
+      'playback:play',
+      control((id) => playback.play(id)),
+    );
+    socket.on(
+      'playback:pause',
+      control((id) => playback.pause(id)),
+    );
+    socket.on(
+      'playback:skip',
+      control((id) => playback.skip(id)),
+    );
+
+    socket.on('playback:seek', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'playback:seek', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        if (current.role === 'listener') {
+          return fail(socket, 'forbidden', 'Only the host and DJs can do that');
+        }
+        await playback.seek(current.row.id, payload.positionMs);
+      });
+    });
+
+    socket.on('playback:reportUnavailable', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'playback:reportUnavailable', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        await playback.reportUnavailable(current.row.id, payload.queueItemId);
+      });
+    });
+
+    socket.on('queue:add', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'queue:add', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        await playback.add(current.row.id, socket.data.user.id, payload.url);
+      });
+    });
+
     socket.on('disconnect', () => {
       enqueue(socket, () => leaveCurrentRoom(socket));
     });
+  });
+
+  playback.onPlayback((roomId, state) => {
+    io.to(roomChannel(roomId)).emit('playback:state', state);
+  });
+  playback.onQueue((roomId, queue) => {
+    io.to(roomChannel(roomId)).emit('queue:updated', { queue });
   });
 
   rooms.onUpdated((row) => {

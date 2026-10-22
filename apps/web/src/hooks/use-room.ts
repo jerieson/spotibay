@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import type { ServerToClientEvents } from '@spotibay/shared';
 import { diffMembers } from '@/lib/members';
+import { timeSync } from '@/lib/clock';
 import { socket } from '@/lib/socket';
 import { useRoomStore } from '@/stores/room';
 
@@ -30,7 +31,10 @@ export function useRoomConnection(code: string) {
     store.reset();
     passwordRef.current = undefined;
 
-    const onConnect = () => join();
+    const onConnect = () => {
+      timeSync.start();
+      join();
+    };
     const onConnectError = (err: Error) => {
       useRoomStore.getState().setStatus('failed', {
         code: err.message === 'banned' ? 'banned' : 'unauthenticated',
@@ -50,6 +54,10 @@ export function useRoomConnection(code: string) {
     };
     const onUpdated: ServerToClientEvents['room:updated'] = ({ room }) =>
       useRoomStore.getState().setRoom(room);
+    const onPlayback: ServerToClientEvents['playback:state'] = (state) =>
+      useRoomStore.getState().setPlayback(state);
+    const onQueue: ServerToClientEvents['queue:updated'] = ({ queue }) =>
+      useRoomStore.getState().setQueue(queue);
     const onClosed = () => useRoomStore.getState().setStatus('closed');
     const onError: ServerToClientEvents['error'] = (err) => toast.error(err.message);
 
@@ -58,6 +66,8 @@ export function useRoomConnection(code: string) {
     socket.on('room:state', onState);
     socket.on('room:members', onMembers);
     socket.on('room:updated', onUpdated);
+    socket.on('playback:state', onPlayback);
+    socket.on('queue:updated', onQueue);
     socket.on('room:closed', onClosed);
     socket.on('error', onError);
     socket.connect();
@@ -68,8 +78,11 @@ export function useRoomConnection(code: string) {
       socket.off('room:state', onState);
       socket.off('room:members', onMembers);
       socket.off('room:updated', onUpdated);
+      socket.off('playback:state', onPlayback);
+      socket.off('queue:updated', onQueue);
       socket.off('room:closed', onClosed);
       socket.off('error', onError);
+      timeSync.stop();
       socket.disconnect();
       useRoomStore.getState().reset();
     };

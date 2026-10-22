@@ -1,5 +1,15 @@
 import { create } from 'zustand';
-import type { Member, Room, RoomRole, RoomState, SocketError } from '@spotibay/shared';
+import {
+  idlePlayback,
+  type Member,
+  type PlaybackState,
+  type QueueItem,
+  type Room,
+  type RoomRole,
+  type RoomState,
+  type SocketError,
+  type SyncConfig,
+} from '@spotibay/shared';
 
 export type RoomStatus = 'connecting' | 'needs-password' | 'joined' | 'closed' | 'failed';
 
@@ -9,11 +19,16 @@ interface RoomStoreState {
   room: Room | null;
   members: Member[];
   you: { userId: string; role: RoomRole } | null;
+  playback: PlaybackState;
+  queue: QueueItem[];
+  sync: SyncConfig;
   reset: () => void;
   setStatus: (status: RoomStatus, error?: SocketError | null) => void;
   setState: (state: RoomState) => void;
   setMembers: (members: Member[]) => void;
   setRoom: (room: Room) => void;
+  setPlayback: (playback: PlaybackState) => void;
+  setQueue: (queue: QueueItem[]) => void;
 }
 
 const initial = {
@@ -22,6 +37,9 @@ const initial = {
   room: null,
   members: [] as Member[],
   you: null,
+  playback: idlePlayback,
+  queue: [] as QueueItem[],
+  sync: { driftThresholdMs: 600, checkIntervalMs: 2000 } as SyncConfig,
 };
 
 export const useRoomStore = create<RoomStoreState>((set) => ({
@@ -35,6 +53,9 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       room: state.room,
       members: state.members,
       you: state.you,
+      playback: state.playback,
+      queue: state.queue,
+      sync: state.sync,
     }),
   // The server is the source of truth for roles, so our own role follows the member list.
   setMembers: (members) =>
@@ -43,4 +64,8 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       return { members, you: me && s.you ? { ...s.you, role: me.role } : s.you };
     }),
   setRoom: (room) => set({ room }),
+  // Updates can arrive out of order around a reconnect; only move forward.
+  setPlayback: (playback) =>
+    set((s) => (playback.version > s.playback.version ? { playback } : {})),
+  setQueue: (queue) => set({ queue }),
 }));

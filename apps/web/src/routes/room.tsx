@@ -3,6 +3,9 @@ import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { roomCodeSchema } from '@spotibay/shared';
 import { CopyButton } from '@/components/copy-button';
+import { AddLinkForm } from '@/components/room/add-link-form';
+import { PlayerPanel } from '@/components/room/player-panel';
+import { QueueList } from '@/components/room/queue-list';
 import { MemberList } from '@/components/room/member-list';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,10 +61,22 @@ function Room({ code }: { code: string }) {
         </div>
         <CopyButton text={inviteLink} label="Copy invite link" />
       </header>
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted-foreground">In the room</h2>
-        <MemberList members={members} selfId={you.userId} viewerRole={you.role} />
-      </section>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="space-y-4">
+          <PlayerPanel />
+          <AddLinkForm />
+        </div>
+        <div className="space-y-6">
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-muted-foreground">Up next</h2>
+            <QueueList />
+          </section>
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-muted-foreground">In the room</h2>
+            <MemberList members={members} selfId={you.userId} viewerRole={you.role} />
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

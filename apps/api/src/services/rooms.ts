@@ -3,6 +3,7 @@ import {
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   type CreateRoomBody,
+  type NowPlaying,
   type Room,
   type RoomSummary,
   type SettingKey,
@@ -71,6 +72,8 @@ export interface RoomServiceDeps {
   store: RoomStore;
   presence: Presence;
   settings: { get<K extends SettingKey>(key: K): SettingsValues[K] };
+  /** What a room is playing right now, for room listings. */
+  nowPlaying?: (roomId: string) => Promise<NowPlaying | null>;
 }
 
 export function generateRoomCode(): string {
@@ -93,7 +96,12 @@ export function toRoom(row: RoomRow): Room {
   };
 }
 
-export function createRoomService({ store, presence, settings }: RoomServiceDeps) {
+export function createRoomService({
+  store,
+  presence,
+  settings,
+  nowPlaying = async () => null,
+}: RoomServiceDeps) {
   const withLock = createKeyedLock();
   const createdListeners = new Set<(row: RoomRow) => void>();
   const updatedListeners = new Set<(row: RoomRow) => void>();
@@ -108,8 +116,8 @@ export function createRoomService({ store, presence, settings }: RoomServiceDeps
   }
 
   async function summarize(row: RoomRow): Promise<RoomSummary> {
-    // Phase 4 fills `nowPlaying` from the room's playback state.
-    return { ...toRoom(row), memberCount: await presence.count(row.id), nowPlaying: null };
+    const [memberCount, playing] = await Promise.all([presence.count(row.id), nowPlaying(row.id)]);
+    return { ...toRoom(row), memberCount, nowPlaying: playing };
   }
 
   async function create(ownerId: string, body: CreateRoomBody): Promise<RoomSummary> {
@@ -145,8 +153,13 @@ export function createRoomService({ store, presence, settings }: RoomServiceDeps
     if (!settings.get('features.publicRooms')) return [];
     const rows = (await store.listOpen()).filter((r) => r.visibility === 'public');
     const counts = await presence.counts(rows.map((r) => r.id));
+    const playing = await Promise.all(rows.map((r) => nowPlaying(r.id)));
     return rows
-      .map((row) => ({ ...toRoom(row), memberCount: counts.get(row.id) ?? 0, nowPlaying: null }))
+      .map((row, i) => ({
+        ...toRoom(row),
+        memberCount: counts.get(row.id) ?? 0,
+        nowPlaying: playing[i] ?? null,
+      }))
       .sort((a, b) => b.memberCount - a.memberCount || b.createdAt.localeCompare(a.createdAt));
   }
 
