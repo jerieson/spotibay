@@ -1,11 +1,16 @@
 import { z } from 'zod';
-import { MAX_QUEUE_URL_LENGTH, type PlaybackState, type QueueItem } from './playback.js';
+import {
+  MAX_QUEUE_URL_LENGTH,
+  type PlaybackState,
+  type QueueItem,
+  type SkipVotes,
+  voteValueSchema,
+} from './playback.js';
 import {
   assignableRoleSchema,
   roomCodeSchema,
-  roomNameSchema,
   roomPasswordSchema,
-  roomVisibilitySchema,
+  updateRoomBodySchema,
   type Member,
   type Room,
   type RoomState,
@@ -26,6 +31,7 @@ export const socketErrorCodes = [
   'invalid_video',
   'track_rejected',
   'queue_limit',
+  'duplicate_track',
   'youtube_unavailable',
   'internal_error',
 ] as const;
@@ -41,21 +47,26 @@ export const clientEventSchemas = {
   'time:ping': z.object({ t0: z.number() }),
   'room:join': z.object({ code: roomCodeSchema, password: roomPasswordSchema.optional() }),
   'room:leave': z.undefined(),
-  'room:update': z
-    .object({
-      name: roomNameSchema.optional(),
-      visibility: roomVisibilitySchema.optional(),
-      password: roomPasswordSchema.nullable().optional(),
-    })
-    .refine((b) => Object.values(b).some((v) => v !== undefined), 'Nothing to update'),
+  'room:update': updateRoomBodySchema,
   'room:setRole': z.object({ userId: z.string().min(1), role: assignableRoleSchema }),
   'room:transferHost': z.object({ userId: z.string().min(1) }),
   'playback:play': z.undefined(),
   'playback:pause': z.undefined(),
   'playback:seek': z.object({ positionMs: z.number().int().nonnegative() }),
   'playback:skip': z.undefined(),
+  'playback:voteSkip': z.undefined(),
   'playback:reportUnavailable': z.object({ queueItemId: z.string().min(1) }),
   'queue:add': z.object({ url: z.string().trim().min(1).max(MAX_QUEUE_URL_LENGTH) }),
+  'queue:remove': z.object({ queueItemId: z.string().min(1) }),
+  'queue:reorder': z.object({
+    queueItemId: z.string().min(1),
+    /** Index in the queue as the sender sees it. */
+    toIndex: z.number().int().nonnegative(),
+  }),
+  'queue:vote': z.object({
+    queueItemId: z.string().min(1),
+    value: voteValueSchema.or(z.literal(0)),
+  }),
 } as const;
 
 export type ClientEventPayloads = {
@@ -76,10 +87,14 @@ export interface ClientToServerEvents {
   'playback:pause': () => void;
   'playback:seek': (payload: ClientEventPayloads['playback:seek']) => void;
   'playback:skip': () => void;
+  'playback:voteSkip': () => void;
   'playback:reportUnavailable': (
     payload: ClientEventPayloads['playback:reportUnavailable'],
   ) => void;
   'queue:add': (payload: ClientEventPayloads['queue:add']) => void;
+  'queue:remove': (payload: ClientEventPayloads['queue:remove']) => void;
+  'queue:reorder': (payload: ClientEventPayloads['queue:reorder']) => void;
+  'queue:vote': (payload: ClientEventPayloads['queue:vote']) => void;
 }
 
 export interface ServerToClientEvents {
@@ -89,6 +104,7 @@ export interface ServerToClientEvents {
   'room:updated': (payload: { room: Room }) => void;
   'room:closed': (payload: { reason: 'host' | 'empty' | 'admin' }) => void;
   'playback:state': (state: PlaybackState) => void;
+  'playback:skipVotes': (votes: SkipVotes) => void;
   'queue:updated': (payload: { queue: QueueItem[] }) => void;
   error: (error: SocketError) => void;
 }

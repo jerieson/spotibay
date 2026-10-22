@@ -7,6 +7,11 @@ import {
 } from '@spotibay/shared';
 
 export const playbackKey = (roomId: string) => `room:${roomId}:playback`;
+export const skipVotesKey = (roomId: string, queueItemId: string) =>
+  `room:${roomId}:skipvotes:${queueItemId}`;
+
+/** Skip votes are per track and cleared when it ends; the TTL only catches leftovers. */
+const SKIP_VOTES_TTL_SEC = 6 * 60 * 60;
 
 /** Reads and writes the `room:{id}:playback` hash. */
 export function createPlaybackStore(redis: Redis) {
@@ -52,7 +57,21 @@ export function createPlaybackStore(redis: Redis) {
     return { videoId, title, channelTitle, thumbnailUrl };
   }
 
-  return { load, save, clear, nowPlaying };
+  async function addSkipVote(roomId: string, queueItemId: string, userId: string) {
+    const key = skipVotesKey(roomId, queueItemId);
+    await redis.sadd(key, userId);
+    await redis.expire(key, SKIP_VOTES_TTL_SEC);
+  }
+
+  function skipVoters(roomId: string, queueItemId: string): Promise<string[]> {
+    return redis.smembers(skipVotesKey(roomId, queueItemId));
+  }
+
+  async function clearSkipVotes(roomId: string, queueItemId: string) {
+    await redis.del(skipVotesKey(roomId, queueItemId));
+  }
+
+  return { load, save, clear, nowPlaying, addSkipVote, skipVoters, clearSkipVotes };
 }
 
 export type PlaybackStore = ReturnType<typeof createPlaybackStore>;

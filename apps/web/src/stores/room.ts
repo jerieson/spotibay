@@ -7,6 +7,7 @@ import {
   type Room,
   type RoomRole,
   type RoomState,
+  type SkipVotes,
   type SocketError,
   type SyncConfig,
 } from '@spotibay/shared';
@@ -21,6 +22,7 @@ interface RoomStoreState {
   you: { userId: string; role: RoomRole } | null;
   playback: PlaybackState;
   queue: QueueItem[];
+  skipVotes: SkipVotes;
   sync: SyncConfig;
   reset: () => void;
   setStatus: (status: RoomStatus, error?: SocketError | null) => void;
@@ -29,6 +31,7 @@ interface RoomStoreState {
   setRoom: (room: Room) => void;
   setPlayback: (playback: PlaybackState) => void;
   setQueue: (queue: QueueItem[]) => void;
+  setSkipVotes: (skipVotes: SkipVotes) => void;
 }
 
 const initial = {
@@ -39,6 +42,7 @@ const initial = {
   you: null,
   playback: idlePlayback,
   queue: [] as QueueItem[],
+  skipVotes: { queueItemId: null, voters: [], needed: 1 } as SkipVotes,
   sync: { driftThresholdMs: 600, checkIntervalMs: 2000 } as SyncConfig,
 };
 
@@ -55,6 +59,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       you: state.you,
       playback: state.playback,
       queue: state.queue,
+      skipVotes: state.skipVotes,
       sync: state.sync,
     }),
   // The server is the source of truth for roles, so our own role follows the member list.
@@ -68,4 +73,5 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   setPlayback: (playback) =>
     set((s) => (playback.version > s.playback.version ? { playback } : {})),
   setQueue: (queue) => set({ queue }),
+  setSkipVotes: (skipVotes) => set({ skipVotes }),
 }));

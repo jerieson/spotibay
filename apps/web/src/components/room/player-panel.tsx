@@ -1,4 +1,4 @@
-import { Pause, Play, RefreshCw, SkipForward, Volume2 } from 'lucide-react';
+import { Pause, Play, RefreshCw, SkipForward, ThumbsDown, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { expectedPositionMs } from '@spotibay/shared';
 import { UserAvatar } from '@/components/user-avatar';
@@ -39,6 +39,9 @@ export function PlayerPanel() {
   const playback = useRoomStore((s) => s.playback);
   const role = useRoomStore((s) => s.you?.role);
   const canControl = role === 'host' || role === 'dj';
+  const selfId = useRoomStore((s) => s.you?.userId);
+  const skipVotes = useRoomStore((s) => s.skipVotes);
+  const votedSkip = selfId !== undefined && skipVotes.voters.includes(selfId);
   const containerRef = useRef<HTMLDivElement>(null);
   const handlers = useRef<PlayerHandlers>({});
   const { ready, error, controls } = useYouTubePlayer(containerRef, {
@@ -182,6 +185,37 @@ export function PlayerPanel() {
           )}
           <span className="w-10">{formatDuration(durationMs)}</span>
         </div>
+
+        {item && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <Button
+              size="sm"
+              variant={votedSkip ? 'default' : 'secondary'}
+              disabled={votedSkip}
+              onClick={() => socket.emit('playback:voteSkip')}
+            >
+              <ThumbsDown /> {votedSkip ? 'Voted to skip' : 'Vote skip'}
+            </Button>
+            <span data-testid="skip-votes">
+              {skipVotes.voters.length} of {skipVotes.needed} needed
+            </span>
+            <div
+              className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary"
+              role="progressbar"
+              aria-label="Skip votes"
+              aria-valuemin={0}
+              aria-valuemax={skipVotes.needed}
+              aria-valuenow={Math.min(skipVotes.voters.length, skipVotes.needed)}
+            >
+              <div
+                className="h-full bg-destructive"
+                style={{
+                  width: `${Math.min(100, (skipVotes.voters.length / skipVotes.needed) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-3">
           <Volume2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />

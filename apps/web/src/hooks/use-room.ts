@@ -58,6 +58,8 @@ export function useRoomConnection(code: string) {
       useRoomStore.getState().setPlayback(state);
     const onQueue: ServerToClientEvents['queue:updated'] = ({ queue }) =>
       useRoomStore.getState().setQueue(queue);
+    const onSkipVotes: ServerToClientEvents['playback:skipVotes'] = (votes) =>
+      useRoomStore.getState().setSkipVotes(votes);
     const onClosed = () => useRoomStore.getState().setStatus('closed');
     const onError: ServerToClientEvents['error'] = (err) => toast.error(err.message);
 
@@ -68,6 +70,7 @@ export function useRoomConnection(code: string) {
     socket.on('room:updated', onUpdated);
     socket.on('playback:state', onPlayback);
     socket.on('queue:updated', onQueue);
+    socket.on('playback:skipVotes', onSkipVotes);
     socket.on('room:closed', onClosed);
     socket.on('error', onError);
     socket.connect();
@@ -80,6 +83,7 @@ export function useRoomConnection(code: string) {
       socket.off('room:updated', onUpdated);
       socket.off('playback:state', onPlayback);
       socket.off('queue:updated', onQueue);
+      socket.off('playback:skipVotes', onSkipVotes);
       socket.off('room:closed', onClosed);
       socket.off('error', onError);
       timeSync.stop();

@@ -2,12 +2,14 @@ import {
   healthResponseSchema,
   meResponseSchema,
   recoveryCodeResponseSchema,
+  roomHistoryResponseSchema,
   roomListResponseSchema,
   roomResponseSchema,
   searchResponseSchema,
   sessionResponseSchema,
   type CreateRoomBody,
   type HealthResponse,
+  type HistoryEntry,
   type RoomSummary,
   type SearchResponse,
   type SessionResponse,
@@ -88,4 +90,12 @@ export async function fetchRoom(code: string): Promise<RoomSummary> {
 
 export function searchTracks(q: string): Promise<SearchResponse> {
   return request(searchResponseSchema, `/api/search?q=${encodeURIComponent(q)}`);
+}
+
+export async function fetchRoomHistory(code: string): Promise<HistoryEntry[]> {
+  const res = await request(
+    roomHistoryResponseSchema,
+    `/api/rooms/${encodeURIComponent(code)}/history`,
+  );
+  return res.history;
 }

@@ -7,6 +7,7 @@ import {
   type JoinAck,
   type ServerToClientEvents,
   type SocketErrorCode,
+  type RoomRole,
   type RoomState,
   type SyncConfig,
 } from '@spotibay/shared';
@@ -148,23 +149,26 @@ export function createSocketServer(deps: SocketServerDeps) {
     const members = await presence.list(row.id);
     const you = members.find((m) => m.userId === userId);
     if (!you) return null;
-    const { playback: state, queue } = await playback.snapshot(row.id);
+    const { playback: state, queue, skipVotes } = await playback.snapshot(row.id);
     return {
       room: toRoom(row),
       members,
       you: { userId, role: you.role },
       playback: state,
       queue,
+      skipVotes,
       sync: deps.syncConfig(),
     };
   }
 
   async function broadcastMembers(roomId: string) {
     io.to(roomChannel(roomId)).emit('room:members', { members: await presence.list(roomId) });
+    // The skip threshold depends on how many people are here.
+    await playback.refreshSkipVotes(roomId);
   }
 
   /** The room this socket is in, but only if its user is still a member and the room is open. */
-  async function currentRoom(socket: AppSocket): Promise<{ row: RoomRow; role: string } | null> {
+  async function currentRoom(socket: AppSocket): Promise<{ row: RoomRow; role: RoomRole } | null> {
     const roomId = socket.data.roomId;
     if (!roomId) return null;
     const [row, member] = await Promise.all([
@@ -341,6 +345,57 @@ export function createSocketServer(deps: SocketServerDeps) {
       });
     });
 
+    socket.on('playback:voteSkip', () => {
+      enqueue(socket, async () => {
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        await playback.voteSkip(current.row.id, socket.data.user.id);
+      });
+    });
+
+    socket.on('queue:remove', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'queue:remove', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        await playback.remove(
+          current.row.id,
+          socket.data.user.id,
+          current.role,
+          payload.queueItemId,
+        );
+      });
+    });
+
+    socket.on('queue:reorder', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'queue:reorder', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        if (current.role === 'listener') {
+          return fail(socket, 'forbidden', 'Only the host and DJs can do that');
+        }
+        await playback.reorder(current.row.id, payload.queueItemId, payload.toIndex);
+      });
+    });
+
+    socket.on('queue:vote', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'queue:vote', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        await playback.vote(
+          current.row.id,
+          socket.data.user.id,
+          payload.queueItemId,
+          payload.value,
+        );
+      });
+    });
+
     socket.on('disconnect', () => {
       enqueue(socket, () => leaveCurrentRoom(socket));
     });
@@ -348,6 +403,9 @@ export function createSocketServer(deps: SocketServerDeps) {
 
   playback.onPlayback((roomId, state) => {
     io.to(roomChannel(roomId)).emit('playback:state', state);
+  });
+  playback.onSkipVotes((roomId, votes) => {
+    io.to(roomChannel(roomId)).emit('playback:skipVotes', votes);
   });
   playback.onQueue((roomId, queue) => {
     io.to(roomChannel(roomId)).emit('queue:updated', { queue });

@@ -40,7 +40,7 @@ export interface RoomStore {
   listOpen(): Promise<RoomRow[]>;
   update(
     id: string,
-    patch: Partial<Pick<RoomRow, 'name' | 'visibility' | 'passwordHash' | 'ownerId'>>,
+    patch: Partial<Pick<RoomRow, 'name' | 'visibility' | 'passwordHash' | 'ownerId' | 'queueMode'>>,
   ): Promise<RoomRow | null>;
   /** Resolves `false` when the room was already closed. */
   close(id: string): Promise<boolean>;
@@ -174,6 +174,7 @@ export function createRoomService({
     const patch: Parameters<RoomStore['update']>[1] = {};
     if (body.name !== undefined) patch.name = body.name;
     if (body.visibility !== undefined) patch.visibility = body.visibility;
+    if (body.queueMode !== undefined) patch.queueMode = body.queueMode;
     if (visibility === 'public') {
       if (typeof body.password === 'string') {
         throw new RoomError('invalid_request', 'Only private rooms can have a password');

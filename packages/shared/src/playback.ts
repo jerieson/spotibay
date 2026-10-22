@@ -20,12 +20,45 @@ export const queuePersonSchema = z.object({
 });
 export type QueuePerson = z.infer<typeof queuePersonSchema>;
 
+export const queueModeSchema = z.enum(['fifo', 'fair']);
+export type QueueMode = z.infer<typeof queueModeSchema>;
+
+export const voteValueSchema = z.union([z.literal(1), z.literal(-1)]);
+export type VoteValue = z.infer<typeof voteValueSchema>;
+
 export const queueItemSchema = z.object({
   id: z.string(),
   track: trackSchema,
   addedBy: queuePersonSchema,
+  /** userId -> vote. */
+  votes: z.record(z.string(), voteValueSchema).default({}),
 });
 export type QueueItem = z.infer<typeof queueItemSchema>;
+
+/** Sum of an item's votes. */
+export function queueScore(item: Pick<QueueItem, 'votes'>): number {
+  let score = 0;
+  for (const value of Object.values(item.votes)) score += value;
+  return score;
+}
+
+/** Who wants to skip the current track, and how many votes it takes. */
+export const skipVotesSchema = z.object({
+  queueItemId: z.string().nullable(),
+  voters: z.array(z.string()),
+  needed: z.number().int().positive(),
+});
+export type SkipVotes = z.infer<typeof skipVotesSchema>;
+
+export const historyEntrySchema = z.object({
+  id: z.string(),
+  track: trackSchema,
+  addedBy: queuePersonSchema,
+  playedAt: z.string(),
+});
+export type HistoryEntry = z.infer<typeof historyEntrySchema>;
+export const roomHistoryResponseSchema = z.object({ history: z.array(historyEntrySchema) });
+export type RoomHistoryResponse = z.infer<typeof roomHistoryResponseSchema>;
 
 export const playbackStatusSchema = z.enum(['playing', 'paused', 'idle']);
 export type PlaybackStatus = z.infer<typeof playbackStatusSchema>;

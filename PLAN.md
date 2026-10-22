@@ -273,13 +273,14 @@ Server → client:
 
 ### Phase 6 — Queue features
 
-- [ ] Queue modes: `fifo`, and `fair` (round-robin by `added_by` in order of each user's first item; host can switch)
-- [ ] Votes: `queue:vote` (+1/−1); in fifo mode, ordering is by score then created time; in fair mode votes are display-only
-- [ ] Vote skip: `playback:voteSkip`; skip when votes ≥ `ceil(members × queue.skipVoteThreshold)`; votes reset per track
-- [ ] Host/DJ: drag-and-drop reorder (`@dnd-kit`), remove any item; users can remove their own items
-- [ ] Duplicate prevention: a video already queued in the room cannot be added again
-- [ ] History tab: tracks played in this room with "Add again"
-- [ ] Web: queue panel with avatars of who added each item, score, vote buttons, skip-vote progress
+- [x] Queue modes: `fifo`, and `fair` (round-robin by `added_by` in order of each user's first item; host can switch)
+- [x] Votes: `queue:vote` (+1/−1); in fifo mode, ordering is by score then created time; in fair mode votes are display-only
+- [x] Vote skip: `playback:voteSkip`; skip when votes ≥ `ceil(members × queue.skipVoteThreshold)`; votes reset per track
+- [x] Host/DJ: drag-and-drop reorder (`@dnd-kit`), remove any item; users can remove their own items
+- [x] Duplicate prevention: a video already queued in the room cannot be added again
+- [x] History tab: tracks played in this room with "Add again"
+- [x] Web: queue panel with avatars of who added each item, score, vote buttons, skip-vote progress
+_(Fair mode refinement: the user whose track is playing goes to the back of the rotation. `queue:vote` also accepts `0` to clear a vote. History is `GET /api/rooms/:code/history`, members only.)_
 
 **Done when:** fair mode interleaves users correctly, vote-skip triggers at threshold, reorder persists across refresh. Unit tests for fair ordering and skip threshold.
 

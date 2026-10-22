@@ -82,9 +82,10 @@ describe('adding tracks by link', () => {
     const [row] = await h.db.select().from(apiQuotaUsage);
     expect(row?.units).toBe(1);
 
-    const queued = next(hostSocket, 'queue:updated');
+    // A second add of the same video is a duplicate, and is checked against the stored track.
+    const err = next(hostSocket, 'error');
     hostSocket.emit('queue:add', { url: url(A) });
-    await queued;
+    expect((await err).code).toBe('duplicate_track');
     expect(h.youtubeCalls.filter((c) => c.includes(A))).toHaveLength(1);
   });
 

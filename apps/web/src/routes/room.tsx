@@ -5,7 +5,7 @@ import { roomCodeSchema } from '@spotibay/shared';
 import { CopyButton } from '@/components/copy-button';
 import { AddMusicSheet } from '@/components/room/add-music-sheet';
 import { PlayerPanel } from '@/components/room/player-panel';
-import { QueueList } from '@/components/room/queue-list';
+import { QueuePanel } from '@/components/room/queue-panel';
 import { MemberList } from '@/components/room/member-list';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,9 +67,8 @@ function Room({ code }: { code: string }) {
           <AddMusicSheet />
         </div>
         <div className="space-y-6">
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold text-muted-foreground">Up next</h2>
-            <QueueList />
+          <section aria-label="Queue">
+            <QueuePanel code={room.code} />
           </section>
           <section className="space-y-2">
             <h2 className="text-sm font-semibold text-muted-foreground">In the room</h2>

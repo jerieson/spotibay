@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { avatarSchema } from './identity.js';
-import { playbackStateSchema, queueItemSchema, syncConfigSchema } from './playback.js';
+import {
+  playbackStateSchema,
+  queueItemSchema,
+  queueModeSchema,
+  skipVotesSchema,
+  syncConfigSchema,
+} from './playback.js';
 
 /** No 0/O/1/I so codes survive being read aloud. */
 export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -48,6 +54,7 @@ export const updateRoomBodySchema = z
     visibility: roomVisibilitySchema.optional(),
     /** `null` removes the password. */
     password: roomPasswordSchema.nullable().optional(),
+    queueMode: queueModeSchema.optional(),
   })
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'Nothing to update');
 export type UpdateRoomBody = z.infer<typeof updateRoomBodySchema>;
@@ -66,7 +73,7 @@ export const roomSchema = z.object({
   visibility: roomVisibilitySchema,
   hasPassword: z.boolean(),
   hostId: z.string(),
-  queueMode: z.enum(['fifo', 'fair']),
+  queueMode: queueModeSchema,
   createdAt: z.string(),
 });
 export type Room = z.infer<typeof roomSchema>;
@@ -99,6 +106,7 @@ export const roomStateSchema = z.object({
   playback: playbackStateSchema,
   /** Upcoming items; the one playing now is `playback.item`. */
   queue: z.array(queueItemSchema),
+  skipVotes: skipVotesSchema,
   sync: syncConfigSchema,
 });
 export type RoomState = z.infer<typeof roomStateSchema>;

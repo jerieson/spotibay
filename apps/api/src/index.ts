@@ -59,6 +59,8 @@ const app = createApp({
   identity,
   bans,
   rooms,
+  presence,
+  playback,
   search,
   wordFilter: () => settings.get('moderation.wordFilter'),
   secureCookie: env.NODE_ENV === 'production',

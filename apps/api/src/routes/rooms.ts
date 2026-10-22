@@ -3,11 +3,14 @@ import {
   createRoomBodySchema,
   roomCodeSchema,
   updateRoomBodySchema,
+  type RoomHistoryResponse,
   type RoomListResponse,
   type RoomResponse,
 } from '@spotibay/shared';
 import { validateBody } from '../lib/validate.js';
 import { requireUser } from '../middleware/session.js';
+import type { PlaybackService } from '../services/playback.js';
+import type { Presence } from '../services/presence.js';
 import { RoomError, type RoomErrorCode, type RoomService } from '../services/rooms.js';
 
 const statusByCode: Record<RoomErrorCode, number> = {
@@ -21,7 +24,14 @@ const statusByCode: Record<RoomErrorCode, number> = {
   user_not_in_room: 404,
 };
 
-export function createRoomsRouter({ rooms }: { rooms: RoomService }) {
+export interface RoomsRouterDeps {
+  rooms: RoomService;
+  /** Needed for the room history route. */
+  presence?: Presence;
+  playback?: Pick<PlaybackService, 'history'>;
+}
+
+export function createRoomsRouter({ rooms, presence, playback }: RoomsRouterDeps) {
   const router = Router();
   router.use(requireUser);
 
@@ -57,6 +67,20 @@ export function createRoomsRouter({ rooms }: { rooms: RoomService }) {
     };
     res.json(body);
   });
+
+  /** Tracks played in the room, newest first. Only people in the room can see them. */
+  if (presence && playback) {
+    router.get('/rooms/:code/history', async (req, res) => {
+      const row = await rooms.findByCode(req.params.code);
+      if (!row) throw new RoomError('room_not_found', 'Room not found');
+      if (row.closedAt) throw new RoomError('room_closed', 'This room has been closed');
+      if (!(await presence.get(row.id, req.user!.id))) {
+        throw new RoomError('forbidden', 'Join the room to see its history');
+      }
+      const body: RoomHistoryResponse = { history: await playback.history(row.id) };
+      res.json(body);
+    });
+  }
 
   router.post('/rooms/:code/close', async (req, res) => {
     await rooms.close(req.params.code, req.user!.id, 'host');

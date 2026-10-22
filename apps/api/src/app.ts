@@ -6,6 +6,8 @@ import { createSearchRouter } from './routes/search.js';
 import { createSessionRouter } from './routes/session.js';
 import type { BanStore } from './services/bans.js';
 import type { IdentityService } from './services/identity.js';
+import type { PlaybackService } from './services/playback.js';
+import type { Presence } from './services/presence.js';
 import type { RoomService } from './services/rooms.js';
 import type { SearchService } from './services/search.js';
 
@@ -22,6 +24,9 @@ export interface AppDeps {
   wordFilter?: () => readonly string[];
   /** Room routes are mounted when this is provided (requires `identity`). */
   rooms?: RoomService;
+  /** With `rooms`, enables the room history route. */
+  presence?: Presence;
+  playback?: Pick<PlaybackService, 'history'>;
   /** Search route is mounted when this is provided (requires `identity`). */
   search?: SearchService;
   secureCookie?: boolean;
@@ -55,6 +60,8 @@ export function createApp({
   bans,
   wordFilter,
   rooms,
+  presence,
+  playback,
   search,
   secureCookie = true,
 }: AppDeps = {}) {
@@ -81,7 +88,7 @@ export function createApp({
       '/api',
       createSessionRouter({ identity, wordFilter: wordFilter ?? (() => []), secureCookie }),
     );
-    if (rooms) app.use('/api', createRoomsRouter({ rooms }));
+    if (rooms) app.use('/api', createRoomsRouter({ rooms, presence, playback }));
     if (search) app.use('/api', createSearchRouter({ search }));
   }
 

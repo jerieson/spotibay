@@ -165,7 +165,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     hostGraceMs: options.hostGraceMs,
     emptyTtlMs: options.emptyTtlMs,
   });
-  const app = createApp({ identity, bans, rooms, search, secureCookie: false });
+  const app = createApp({ identity, bans, rooms, presence, playback, search, secureCookie: false });
   const httpServer: Server = createServer(app);
   const io = createSocketServer({
     httpServer,
