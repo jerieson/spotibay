@@ -218,13 +218,13 @@ Server → client:
 
 ### Phase 2 — Guest identity and avatars
 
-- [ ] `POST /api/session`: if no valid cookie, create a `users` row with a random name (adjective + animal, from word lists in shared) and a random avatar seed; return the user and a recovery code (shown once)
-- [ ] Session token: JWT (`jose`) with userId, httpOnly, Secure, SameSite=Lax cookie, 1 year; refresh on use
-- [ ] Recovery code: 16 chars base32 in groups of 4; store `HMAC-SHA256(RECOVERY_HMAC_SECRET, code)`; `POST /api/session/recover` restores the session; `POST /api/session/recovery-code` regenerates it
-- [ ] `GET /api/me`, `PATCH /api/me` (display name 2–24 chars, word filter applied, avatar)
-- [ ] Avatars with `@dicebear/core` + `@dicebear/collection`, rendered client-side from `{style, seed, options}`
-- [ ] Profile page: name editor, avatar builder (style picker with 6–8 styles, background color, re-roll seed, live preview), recovery code display/regenerate with copy button and a warning that losing it means losing the account on other devices
-- [ ] Ban check middleware (user ban and IP ban; Express `trust proxy` set for Caddy)
+- [x] `POST /api/session`: if no valid cookie, create a `users` row with a random name (adjective + animal, from word lists in shared) and a random avatar seed; return the user and a recovery code (shown once)
+- [x] Session token: JWT (`jose`) with userId, httpOnly, Secure, SameSite=Lax cookie, 1 year; refresh on use
+- [x] Recovery code: 16 chars base32 in groups of 4; store `HMAC-SHA256(RECOVERY_HMAC_SECRET, code)`; `POST /api/session/recover` restores the session; `POST /api/session/recovery-code` regenerates it
+- [x] `GET /api/me`, `PATCH /api/me` (display name 2–24 chars, word filter applied, avatar)
+- [x] Avatars with `@dicebear/core` + `@dicebear/collection`, rendered client-side from `{style, seed, options}`
+- [x] Profile page: name editor, avatar builder (style picker with 6–8 styles, background color, re-roll seed, live preview), recovery code display/regenerate with copy button and a warning that losing it means losing the account on other devices
+- [x] Ban check middleware (user ban and IP ban; Express `trust proxy` set for Caddy)
 
 **Done when:** a new browser gets a guest identity, can edit name/avatar, and can restore the same account in a private window using the recovery code. Tests cover session creation, recovery, and name validation.
 

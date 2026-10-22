@@ -1,9 +1,22 @@
-import express from 'express';
+import express, { type ErrorRequestHandler } from 'express';
 import type { HealthResponse } from '@spotibay/shared';
+import { attachUser, banGuard } from './middleware/session.js';
+import { createSessionRouter } from './routes/session.js';
+import type { BanStore } from './services/bans.js';
+import type { IdentityService } from './services/identity.js';
 
 export interface HealthChecks {
   db: () => Promise<unknown>;
   redis: () => Promise<unknown>;
+}
+
+export interface AppDeps {
+  checks?: HealthChecks;
+  /** Identity routes, session middleware and ban checks are mounted only when these are provided. */
+  identity?: IdentityService;
+  bans?: BanStore;
+  wordFilter?: () => readonly string[];
+  secureCookie?: boolean;
 }
 
 async function probe(check: () => Promise<unknown>): Promise<'ok' | 'error'> {
@@ -15,8 +28,30 @@ async function probe(check: () => Promise<unknown>): Promise<'ok' | 'error'> {
   }
 }
 
-export function createApp(checks?: HealthChecks) {
+const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  if (err instanceof SyntaxError && 'status' in err && err.status === 400) {
+    res.status(400).json({ error: 'invalid_request', message: 'Malformed JSON' });
+    return;
+  }
+  console.error(err);
+  res.status(500).json({ error: 'internal_error' });
+};
+
+export function createApp({
+  checks,
+  identity,
+  bans,
+  wordFilter,
+  secureCookie = true,
+}: AppDeps = {}) {
   const app = express();
+  // Caddy is the single trusted proxy in front of the api.
+  app.set('trust proxy', 1);
+  app.disable('x-powered-by');
 
   app.get('/api/health', async (_req, res) => {
     const body: HealthResponse = { status: 'ok' };
@@ -29,5 +64,15 @@ export function createApp(checks?: HealthChecks) {
     res.status(body.status === 'ok' ? 200 : 503).json(body);
   });
 
+  if (identity && bans) {
+    app.use('/api', express.json({ limit: '16kb' }));
+    app.use('/api', attachUser(identity, secureCookie), banGuard(bans));
+    app.use(
+      '/api',
+      createSessionRouter({ identity, wordFilter: wordFilter ?? (() => []), secureCookie }),
+    );
+  }
+
+  app.use(errorHandler);
   return app;
 }

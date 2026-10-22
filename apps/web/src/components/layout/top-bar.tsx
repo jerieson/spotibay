@@ -2,8 +2,12 @@ import { Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { UserAvatar } from '@/components/user-avatar';
+import { useSession } from '@/hooks/use-session';
 
 export function TopBar() {
+  const session = useSession();
+
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
@@ -18,10 +22,17 @@ export function TopBar() {
           Search or paste a YouTube link
         </button>
         <ThemeToggle />
-        <div
-          className="size-9 shrink-0 rounded-full bg-volt/20 ring-2 ring-volt/60"
+        <Link
+          to="/profile"
           aria-label="Profile"
-        />
+          className="shrink-0 rounded-full ring-2 ring-volt/60"
+        >
+          {session.data ? (
+            <UserAvatar avatar={session.data.avatar} name={session.data.displayName} />
+          ) : (
+            <div className="size-9 rounded-full bg-volt/20" />
+          )}
+        </Link>
       </div>
     </header>
   );

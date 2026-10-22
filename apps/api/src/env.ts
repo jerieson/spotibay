@@ -4,6 +4,8 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1).default('postgres://spotibay:spotibay@localhost:5432/spotibay'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+  RECOVERY_HMAC_SECRET: z.string().min(32, 'RECOVERY_HMAC_SECRET must be at least 32 characters'),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
 });
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+export * from './identity.js';
 export * from './settings.js';
 
 export const healthResponseSchema = z.object({

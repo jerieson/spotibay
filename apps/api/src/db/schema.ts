@@ -14,8 +14,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-
-export type Avatar = { style: string; seed: string; options: Record<string, unknown> };
+import type { Avatar } from '@spotibay/shared';
 
 export const roomVisibility = pgEnum('room_visibility', ['public', 'private']);
 export const queueMode = pgEnum('queue_mode', ['fifo', 'fair']);
@@ -209,7 +208,10 @@ export const adminAuditLog = pgTable('admin_audit_log', {
   action: text('action').notNull(),
   targetType: text('target_type'),
   targetId: text('target_id'),
-  details: jsonb('details').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  details: jsonb('details')
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'::jsonb`),
   createdAt: createdAt(),
 });
 
