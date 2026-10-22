@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { roomCodeSchema } from '@spotibay/shared';
 import { CopyButton } from '@/components/copy-button';
-import { AddLinkForm } from '@/components/room/add-link-form';
+import { AddMusicSheet } from '@/components/room/add-music-sheet';
 import { PlayerPanel } from '@/components/room/player-panel';
 import { QueueList } from '@/components/room/queue-list';
 import { MemberList } from '@/components/room/member-list';
@@ -64,7 +64,7 @@ function Room({ code }: { code: string }) {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-4">
           <PlayerPanel />
-          <AddLinkForm />
+          <AddMusicSheet />
         </div>
         <div className="space-y-6">
           <section className="space-y-2">

@@ -29,6 +29,7 @@ import { createYouTubeService } from '../../src/services/youtube.js';
 import { createPresence } from '../../src/services/presence.js';
 import { createRoomLifecycle } from '../../src/services/room-lifecycle.js';
 import { createRoomService } from '../../src/services/rooms.js';
+import { createSearchService } from '../../src/services/search.js';
 import { createSettingsService } from '../../src/services/settings.js';
 import { createBanStore, createRoomStore, createUserStore } from '../../src/services/user-store.js';
 import { createSocketServer } from '../../src/socket/server.js';
@@ -110,7 +111,17 @@ export async function createHarness(options: HarnessOptions = {}) {
   });
   const videos = new Map<string, FakeVideo>();
   const youtubeCalls: string[][] = [];
+  /** Canned `search.list` answers: query -> video ids. `searchCalls` records the queries asked. */
+  const searchResults = new Map<string, string[]>();
+  const searchCalls: string[] = [];
   const fakeFetch = (async (input: URL | string) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith('/search')) {
+      const q = url.searchParams.get('q') ?? '';
+      searchCalls.push(q);
+      const items = (searchResults.get(q) ?? []).map((videoId) => ({ id: { videoId } }));
+      return new Response(JSON.stringify({ items }), { status: 200 });
+    }
     const ids = (new URL(input).searchParams.get('id') ?? '').split(',');
     youtubeCalls.push(ids);
     const items = ids.flatMap((id) => {
@@ -132,12 +143,14 @@ export async function createHarness(options: HarnessOptions = {}) {
     });
     return new Response(JSON.stringify({ items }), { status: 200 });
   }) as typeof fetch;
+  const quotaStore = createQuotaStore(db);
   const youtube = createYouTubeService({
     apiKey: 'test-key',
     tracks: createTrackStore(db),
-    quota: createQuotaStore(db),
+    quota: quotaStore,
     fetch: fakeFetch,
   });
+  const search = createSearchService({ redis, settings, quota: quotaStore, youtube });
   const playback = createPlaybackService({
     store: playbackStore,
     queue: createQueueStore(db),
@@ -152,7 +165,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     hostGraceMs: options.hostGraceMs,
     emptyTtlMs: options.emptyTtlMs,
   });
-  const app = createApp({ identity, bans, rooms, secureCookie: false });
+  const app = createApp({ identity, bans, rooms, search, secureCookie: false });
   const httpServer: Server = createServer(app);
   const io = createSocketServer({
     httpServer,
@@ -228,6 +241,9 @@ export async function createHarness(options: HarnessOptions = {}) {
     playback,
     videos,
     youtubeCalls,
+    searchResults,
+    searchCalls,
+    quota: quotaStore,
     guest,
     connect,
     close,

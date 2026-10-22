@@ -154,5 +154,9 @@ export function createQuotaStore(db: Db): QuotaStore {
           },
         });
     },
+    async get(date) {
+      const [row] = await db.select().from(apiQuotaUsage).where(eq(apiQuotaUsage.date, date));
+      return { units: row?.units ?? 0, searchCalls: row?.searchCalls ?? 0 };
+    },
   };
 }

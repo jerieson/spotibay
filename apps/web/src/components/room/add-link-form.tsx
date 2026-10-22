@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { socket } from '@/lib/socket';
 
-export function AddLinkForm() {
+export function AddLinkForm({ onAdded }: { onAdded?: () => void }) {
   const [url, setUrl] = useState('');
 
   function submit(e: FormEvent) {
@@ -13,6 +13,7 @@ export function AddLinkForm() {
     if (!trimmed) return;
     socket.emit('queue:add', { url: trimmed });
     setUrl('');
+    onAdded?.();
   }
 
   return (

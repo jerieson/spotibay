@@ -3,6 +3,7 @@ import { z } from 'zod';
 export * from './identity.js';
 export * from './playback.js';
 export * from './rooms.js';
+export * from './search.js';
 export * from './settings.js';
 export * from './socket-events.js';
 

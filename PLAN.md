@@ -261,10 +261,10 @@ Server → client:
 
 ### Phase 5 — Search, cache, quota
 
-- [ ] `GET /api/search?q=`: normalize query (trim, lowercase, collapse spaces); return Redis cache hit if present; otherwise check `features.search`, per-user `limits.searchesPerUserPerDay`, and global `search.dailySearchCallBudget` (date in America/Los_Angeles)
-- [ ] On miss: `search.list` with `type=video`, `videoEmbeddable=true`, `maxResults=15`, then one `videos.list` for durations; upsert tracks; cache for `search.cacheTtlSec`; record quota (search call + units)
-- [ ] Responses include `remainingSearchesToday` for the user
-- [ ] Web: search sheet/dialog in the room, submit-only (no search-as-you-type), results with thumbnail, title, channel, duration, "Add to queue" and "Add to playlist"; paste-a-link input in the same dialog; clear message when the budget is exhausted ("Search is used up for today — paste a YouTube link instead")
+- [x] `GET /api/search?q=`: normalize query (trim, lowercase, collapse spaces); return Redis cache hit if present; otherwise check `features.search`, per-user `limits.searchesPerUserPerDay`, and global `search.dailySearchCallBudget` (date in America/Los_Angeles)
+- [x] On miss: `search.list` with `type=video`, `videoEmbeddable=true`, `maxResults=15`, then one `videos.list` for durations; upsert tracks; cache for `search.cacheTtlSec`; record quota (search call + units)
+- [x] Responses include `remainingSearchesToday` for the user
+- [x] Web: search sheet/dialog in the room, submit-only (no search-as-you-type), results with thumbnail, title, channel, duration, "Add to queue" and "Add to playlist"; paste-a-link input in the same dialog; clear message when the budget is exhausted ("Search is used up for today — paste a YouTube link instead") _("Add to playlist" button deferred to Phase 7, when playlists exist.)_
 
 **Done when:** a repeated query does not call YouTube; limits are enforced; quota usage is recorded per day. Tests mock the YouTube HTTP calls.
 

@@ -11,6 +11,7 @@ import { createPlaybackStore } from './services/playback-store.js';
 import { createQueueStore, createQuotaStore, createTrackStore } from './services/queue-store.js';
 import { createRoomLifecycle } from './services/room-lifecycle.js';
 import { createRoomService } from './services/rooms.js';
+import { createSearchService } from './services/search.js';
 import { settings } from './services/settings.js';
 import { createBanStore, createRoomStore, createUserStore } from './services/user-store.js';
 import { createYouTubeService } from './services/youtube.js';
@@ -33,11 +34,13 @@ const rooms = createRoomService({
   settings,
   nowPlaying: playbackStore.nowPlaying,
 });
+const quotaStore = createQuotaStore(db);
 const youtube = createYouTubeService({
   apiKey: env.YOUTUBE_API_KEY,
   tracks: createTrackStore(db),
-  quota: createQuotaStore(db),
+  quota: quotaStore,
 });
+const search = createSearchService({ redis, settings, quota: quotaStore, youtube });
 const playback = createPlaybackService({
   store: playbackStore,
   queue: createQueueStore(db),
@@ -56,6 +59,7 @@ const app = createApp({
   identity,
   bans,
   rooms,
+  search,
   wordFilter: () => settings.get('moderation.wordFilter'),
   secureCookie: env.NODE_ENV === 'production',
 });

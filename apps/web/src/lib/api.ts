@@ -4,10 +4,12 @@ import {
   recoveryCodeResponseSchema,
   roomListResponseSchema,
   roomResponseSchema,
+  searchResponseSchema,
   sessionResponseSchema,
   type CreateRoomBody,
   type HealthResponse,
   type RoomSummary,
+  type SearchResponse,
   type SessionResponse,
   type UpdateMeBody,
   type User,
@@ -82,4 +84,8 @@ export async function fetchRooms(): Promise<RoomSummary[]> {
 
 export async function fetchRoom(code: string): Promise<RoomSummary> {
   return (await request(roomResponseSchema, `/api/rooms/${encodeURIComponent(code)}`)).room;
+}
+
+export function searchTracks(q: string): Promise<SearchResponse> {
+  return request(searchResponseSchema, `/api/search?q=${encodeURIComponent(q)}`);
 }

@@ -5,6 +5,10 @@ const VIDEOS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/videos';
 /** `videos.list` accepts at most 50 ids per call and costs 1 quota unit per call. */
 const VIDEOS_BATCH = 50;
 const VIDEOS_LIST_COST = 1;
+const SEARCH_ENDPOINT = 'https://www.googleapis.com/youtube/v3/search';
+/** `search.list` costs 100 quota units per call. */
+const SEARCH_LIST_COST = 100;
+const SEARCH_MAX_RESULTS = 15;
 /** Stored track details are reused for this long before asking YouTube again. */
 const TRACK_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -22,6 +26,8 @@ export interface TrackStore {
 export interface QuotaStore {
   /** Adds to the counters for `date` (YYYY-MM-DD, Pacific Time). */
   add(date: string, units: number, searchCalls: number): Promise<void>;
+  /** What has been spent on `date` so far. */
+  get(date: string): Promise<{ units: number; searchCalls: number }>;
 }
 
 export type YouTubeErrorCode = 'not_configured' | 'api_error';
@@ -96,6 +102,10 @@ const videosResponseSchema = z.object({
     .default([]),
 });
 
+const searchResponseSchema = z.object({
+  items: z.array(z.object({ id: z.object({ videoId: z.string().optional() }) })).default([]),
+});
+
 export interface YouTubeServiceDeps {
   apiKey: string | undefined;
   tracks: TrackStore;
@@ -156,7 +166,30 @@ export function createYouTubeService({
     return result;
   }
 
-  return { getVideos, markUnembeddable: tracks.markUnembeddable };
+  /** Top embeddable video matches for `query`, with durations (one `search.list` plus one `videos.list` for uncached ids). */
+  async function search(query: string): Promise<StoredTrack[]> {
+    if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
+    const url = new URL(SEARCH_ENDPOINT);
+    url.searchParams.set('part', 'snippet');
+    url.searchParams.set('type', 'video');
+    url.searchParams.set('videoEmbeddable', 'true');
+    url.searchParams.set('maxResults', String(SEARCH_MAX_RESULTS));
+    url.searchParams.set('q', query);
+    url.searchParams.set('key', apiKey);
+    const res = await fetchImpl(url);
+    await quota.add(quotaDate(now()), SEARCH_LIST_COST, 1);
+    if (!res.ok) throw new YouTubeError('api_error', `YouTube API returned ${res.status}`);
+    const parsed = searchResponseSchema.safeParse(await res.json());
+    if (!parsed.success) throw new YouTubeError('api_error', 'Unexpected YouTube API response');
+    const ids = parsed.data.items.flatMap((item) => item.id.videoId ?? []);
+    const details = await getVideos(ids);
+    return [...new Set(ids)].flatMap((id) => {
+      const track = details.get(id);
+      return track?.embeddable && track.durationSec > 0 ? [track] : [];
+    });
+  }
+
+  return { getVideos, search, markUnembeddable: tracks.markUnembeddable };
 }
 
 export type YouTubeService = ReturnType<typeof createYouTubeService>;

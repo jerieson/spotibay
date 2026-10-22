@@ -114,7 +114,10 @@ describe('YouTube service', () => {
         upsertMany: async (rows) => rows.forEach((r) => stored.set(r.videoId, r)),
         markUnembeddable: async () => undefined,
       },
-      quota: { add: async (d, u, s) => void quota.push([d, u, s]) },
+      quota: {
+        add: async (d, u, s) => void quota.push([d, u, s]),
+        get: async () => ({ units: 0, searchCalls: 0 }),
+      },
       fetch: fetchFake,
       now: () => clock,
     });
