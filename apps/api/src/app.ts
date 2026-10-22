@@ -1,5 +1,5 @@
 import express from 'express';
-import type { HealthResponse } from '@listen/shared';
+import type { HealthResponse } from '@spotibay/shared';
 
 export function createApp() {
   const app = express();

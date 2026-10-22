@@ -26,7 +26,7 @@ importers:
 
   apps/api:
     dependencies:
-      '@listen/shared':
+      '@spotibay/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       express:
@@ -60,12 +60,12 @@ importers:
 
   apps/web:
     dependencies:
-      '@listen/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@radix-ui/react-slot':
         specifier: ^1.5.0
         version: 1.5.0(@types/react@19.3.0)(react@19.3.1)
+      '@spotibay/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))

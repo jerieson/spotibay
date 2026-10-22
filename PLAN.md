@@ -1,4 +1,4 @@
-# ListenTogether Build Plan
+# Spotibay Build Plan
 
 ## How to use this with Claude Code
 
@@ -75,13 +75,13 @@ No audio passes through the server. Each browser plays YouTube directly; the ser
 
 ```
 NODE_ENV=production
-DOMAIN=listen.example.com
-APP_URL=https://listen.example.com
+DOMAIN=spotibay.example.com
+APP_URL=https://spotibay.example.com
 
-DATABASE_URL=postgres://listen:change_me@postgres:5432/listen
-POSTGRES_USER=listen
+DATABASE_URL=postgres://spotibay:change_me@postgres:5432/spotibay
+POSTGRES_USER=spotibay
 POSTGRES_PASSWORD=change_me
-POSTGRES_DB=listen
+POSTGRES_DB=spotibay
 
 REDIS_URL=redis://redis:6379
 

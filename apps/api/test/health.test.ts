@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { healthResponseSchema } from '@listen/shared';
+import { healthResponseSchema } from '@spotibay/shared';
 import { createApp } from '../src/app.js';
 
 describe('GET /api/health', () => {

@@ -2,7 +2,7 @@
 
 ## Project
 
-ListenTogether: a self-hosted web app where people join rooms and listen to YouTube music in sync. Anonymous guests (random name + avatar), shared queues, playlists, chat, and a super admin panel that controls app configuration live.
+Spotibay: a self-hosted web app where people join rooms and listen to YouTube music in sync. Anonymous guests (random name + avatar), shared queues, playlists, chat, and a super admin panel that controls app configuration live.
 
 The full build plan is in `PLAN.md`. Work one phase at a time. Do not start a phase until the previous phase's "Done when" checks pass. Tick the phase's checkboxes in `PLAN.md` when finished.
 

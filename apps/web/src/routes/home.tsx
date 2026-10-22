@@ -9,7 +9,7 @@ export function HomePage() {
     <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-6 p-4">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
-          Listen<span className="text-volt">Together</span>
+          Spoti<span className="text-volt">bay</span>
         </h1>
         <ThemeToggle />
       </header>

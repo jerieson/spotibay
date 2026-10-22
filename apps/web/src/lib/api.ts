@@ -1,4 +1,4 @@
-import { healthResponseSchema, type HealthResponse } from '@listen/shared';
+import { healthResponseSchema, type HealthResponse } from '@spotibay/shared';
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch('/api/health');
