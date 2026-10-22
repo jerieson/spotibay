@@ -6,6 +6,7 @@
 /* Volt #CEFF00 is the main accent. Dark is the default theme. */
 :root {
   --volt: #ceff00;
+  --ink: oklch(0.12 0 0);
   --background: oklch(0.99 0 0);
   --foreground: oklch(0.15 0 0);
   --card: oklch(1 0 0);
@@ -51,6 +52,8 @@
 
 @theme inline {
   --color-volt: var(--volt);
+  --color-ink: var(--ink);
+  --font-display: 'Avenir Next', 'Segoe UI', ui-rounded, system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
