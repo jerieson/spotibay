@@ -83,6 +83,14 @@ function playOrder(
 
 type EndReason = 'ended' | 'skipped' | 'unavailable';
 
+export interface TrackChange {
+  reason: EndReason;
+  /** The item that just ended, if any. */
+  previous: QueueItem | null;
+  /** The item that started, if any. */
+  next: QueueItem | null;
+}
+
 export function createPlaybackService({
   store,
   queue,
@@ -98,6 +106,7 @@ export function createPlaybackService({
   const playbackListeners = new Set<(roomId: string, state: PlaybackState) => void>();
   const queueListeners = new Set<(roomId: string, queue: QueueItem[]) => void>();
   const skipVoteListeners = new Set<(roomId: string, votes: SkipVotes) => void>();
+  const trackChangeListeners = new Set<(roomId: string, change: TrackChange) => void>();
 
   function clearTimer(roomId: string) {
     const timer = timers.get(roomId);
@@ -205,6 +214,8 @@ export function createPlaybackService({
     }
     await publishQueue(roomId);
     await publishSkipVotes(roomId);
+    const change: TrackChange = { reason, previous: current.item, next: next ?? null };
+    for (const listener of trackChangeListeners) listener(roomId, change);
   }
 
   async function snapshot(roomId: string): Promise<RoomSnapshot> {
@@ -514,6 +525,10 @@ export function createPlaybackService({
     onSkipVotes(listener: (roomId: string, votes: SkipVotes) => void) {
       skipVoteListeners.add(listener);
       return () => skipVoteListeners.delete(listener);
+    },
+    onTrackChange(listener: (roomId: string, change: TrackChange) => void) {
+      trackChangeListeners.add(listener);
+      return () => trackChangeListeners.delete(listener);
     },
     onQueue(listener: (roomId: string, queue: QueueItem[]) => void) {
       queueListeners.add(listener);

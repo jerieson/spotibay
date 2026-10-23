@@ -14,6 +14,7 @@ import {
 import { readCookie } from '../middleware/session.js';
 import type { BanStore } from '../services/bans.js';
 import type { IdentityService, UserRecord } from '../services/identity.js';
+import { ChatError, type ChatService } from '../services/chat.js';
 import { PlaybackError, type PlaybackService } from '../services/playback.js';
 import { PlaylistError, type PlaylistService } from '../services/playlists.js';
 import type { Presence } from '../services/presence.js';
@@ -44,6 +45,7 @@ export interface SocketServerDeps {
   presence: Presence;
   lifecycle: RoomLifecycle;
   playback: PlaybackService;
+  chat: ChatService;
   playlists: Pick<PlaylistService, 'videoIdsForQueue'>;
   maxUsersPerRoom: () => number;
   syncConfig: () => SyncConfig;
@@ -68,6 +70,7 @@ export function createSocketServer(deps: SocketServerDeps) {
     presence,
     lifecycle,
     playback,
+    chat,
     playlists,
     onError = (e) => console.error(e),
   } = deps;
@@ -122,6 +125,10 @@ export function createSocketServer(deps: SocketServerDeps) {
         fail(socket, err.code === 'playlist_not_found' ? err.code : 'invalid_payload', err.message);
         return;
       }
+      if (err instanceof ChatError) {
+        fail(socket, err.code, err.message);
+        return;
+      }
       if (err instanceof PlaybackError) {
         fail(socket, err.code, err.message);
         return;
@@ -156,7 +163,10 @@ export function createSocketServer(deps: SocketServerDeps) {
     const members = await presence.list(row.id);
     const you = members.find((m) => m.userId === userId);
     if (!you) return null;
-    const { playback: state, queue, skipVotes } = await playback.snapshot(row.id);
+    const [{ playback: state, queue, skipVotes }, messages] = await Promise.all([
+      playback.snapshot(row.id),
+      chat.history(row.id),
+    ]);
     return {
       room: toRoom(row),
       members,
@@ -164,6 +174,7 @@ export function createSocketServer(deps: SocketServerDeps) {
       playback: state,
       queue,
       skipVotes,
+      chat: messages,
       sync: deps.syncConfig(),
     };
   }
@@ -191,7 +202,10 @@ export function createSocketServer(deps: SocketServerDeps) {
     socket.data.roomId = undefined;
     await socket.leave(roomChannel(roomId));
     const { removed } = await presence.leave(roomId, socket.data.user.id);
-    if (removed) await broadcastMembers(roomId);
+    if (removed) {
+      chat.system(roomId, `${socket.data.user.displayName} left`);
+      await broadcastMembers(roomId);
+    }
     await lifecycle.reconcile(roomId);
   }
 
@@ -233,7 +247,10 @@ export function createSocketServer(deps: SocketServerDeps) {
     await socket.join(roomChannel(row.id));
     const state = await roomStateFor(row, user.id);
     if (state) socket.emit('room:state', state);
-    if (joined.isNew) await broadcastMembers(row.id);
+    if (joined.isNew) {
+      chat.system(row.id, `${user.displayName} joined`);
+      await broadcastMembers(row.id);
+    }
     await lifecycle.reconcile(row.id);
     return { ok: true };
   }
@@ -419,6 +436,27 @@ export function createSocketServer(deps: SocketServerDeps) {
       });
     });
 
+    socket.on('chat:send', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'chat:send', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        const { id, displayName, avatar } = socket.data.user;
+        await chat.send(current.row.id, { userId: id, displayName, avatar }, payload.body);
+      });
+    });
+
+    socket.on('chat:react', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'chat:react', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        await chat.react(current.row.id, socket.data.user.id, payload.emoji);
+      });
+    });
+
     socket.on('disconnect', () => {
       enqueue(socket, () => leaveCurrentRoom(socket));
     });
@@ -432,6 +470,20 @@ export function createSocketServer(deps: SocketServerDeps) {
   });
   playback.onQueue((roomId, queue) => {
     io.to(roomChannel(roomId)).emit('queue:updated', { queue });
+  });
+
+  playback.onTrackChange((roomId, { reason, previous, next }) => {
+    if (previous && reason !== 'ended') {
+      const why = reason === 'unavailable' ? "can't be played" : 'was skipped';
+      chat.system(roomId, `"${previous.track.title}" ${why}`);
+    }
+    if (next) chat.system(roomId, `Now playing: ${next.track.title}`);
+  });
+  chat.onMessage((roomId, message) => {
+    io.to(roomChannel(roomId)).emit('chat:message', message);
+  });
+  chat.onReaction((roomId, reaction) => {
+    io.to(roomChannel(roomId)).emit('chat:reaction', reaction);
   });
 
   rooms.onUpdated((row) => {

@@ -4,6 +4,8 @@ import { db, pool } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { env } from './env.js';
 import { connectRedis, redis } from './redis.js';
+import { createChatService } from './services/chat.js';
+import { createChatStore } from './services/chat-store.js';
 import { createLibraryService } from './services/library.js';
 import { createIdentityService } from './services/identity.js';
 import { createPlaylistService } from './services/playlists.js';
@@ -51,6 +53,7 @@ const playback = createPlaybackService({
   rooms,
   settings,
 });
+const chat = createChatService({ store: createChatStore(db), redis, settings });
 const playlists = createPlaylistService({ db, youtube, settings });
 const library = createLibraryService({ db });
 const lifecycle = createRoomLifecycle({ rooms, presence });
@@ -81,6 +84,7 @@ createSocketServer({
   presence,
   lifecycle,
   playback,
+  chat,
   playlists,
   maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
   syncConfig: () => ({

@@ -16,3 +16,10 @@ export function containsFilteredWord(text: string, words: readonly string[]): bo
     return needle.length > 0 && haystack.includes(needle);
   });
 }
+
+/** Replaces every whitespace-separated word that contains a filtered word with asterisks. */
+export function maskFilteredWords(text: string, words: readonly string[]): string {
+  return text.replace(/\S+/g, (token) =>
+    containsFilteredWord(token, words) ? '*'.repeat([...token].length) : token,
+  );
+}

@@ -304,11 +304,11 @@ _(Fair mode refinement: the user whose track is playing goes to the back of the 
 
 ### Phase 8 — Chat and reactions
 
-- [ ] `chat:send`: length limit, rate limit (`limits.chatMessagesPerMinute`), word filter (mask matches), behind `features.chat`
-- [ ] Last 50 messages sent in `room:state`; messages persisted
-- [ ] System messages for joins/leaves, track changes, skips
-- [ ] `chat:react`: emoji reactions that float over the player for everyone (fixed set of 8 emojis), rate limited, behind `features.reactions`
-- [ ] Web: chat panel with avatars, timestamps, auto-scroll with "new messages" pill when scrolled up; on mobile, chat/queue/members are tabs under the player
+- [x] `chat:send`: length limit, rate limit (`limits.chatMessagesPerMinute`), word filter (mask matches), behind `features.chat`
+- [x] Last 50 messages sent in `room:state`; messages persisted
+- [x] System messages for joins/leaves, track changes, skips
+- [x] `chat:react`: emoji reactions that float over the player for everyone (fixed set of 8 emojis), rate limited, behind `features.reactions`
+- [x] Web: chat panel with avatars, timestamps, auto-scroll with "new messages" pill when scrolled up; on mobile, chat/queue/members are tabs under the player
 
 **Done when:** chat works across clients, rate limit and word filter apply, reactions animate on all clients.
 

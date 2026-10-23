@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   idlePlayback,
+  type ChatMessage,
   type Member,
   type PlaybackState,
   type QueueItem,
@@ -11,6 +12,9 @@ import {
   type SocketError,
   type SyncConfig,
 } from '@spotibay/shared';
+
+/** Older messages are dropped client-side so a long session stays light. */
+const CHAT_CAP = 200;
 
 export type RoomStatus = 'connecting' | 'needs-password' | 'joined' | 'closed' | 'failed';
 
@@ -23,6 +27,7 @@ interface RoomStoreState {
   playback: PlaybackState;
   queue: QueueItem[];
   skipVotes: SkipVotes;
+  chat: ChatMessage[];
   sync: SyncConfig;
   reset: () => void;
   setStatus: (status: RoomStatus, error?: SocketError | null) => void;
@@ -32,6 +37,7 @@ interface RoomStoreState {
   setPlayback: (playback: PlaybackState) => void;
   setQueue: (queue: QueueItem[]) => void;
   setSkipVotes: (skipVotes: SkipVotes) => void;
+  addChat: (message: ChatMessage) => void;
 }
 
 const initial = {
@@ -43,6 +49,7 @@ const initial = {
   playback: idlePlayback,
   queue: [] as QueueItem[],
   skipVotes: { queueItemId: null, voters: [], needed: 1 } as SkipVotes,
+  chat: [] as ChatMessage[],
   sync: { driftThresholdMs: 600, checkIntervalMs: 2000 } as SyncConfig,
 };
 
@@ -60,6 +67,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       playback: state.playback,
       queue: state.queue,
       skipVotes: state.skipVotes,
+      chat: state.chat,
       sync: state.sync,
     }),
   // The server is the source of truth for roles, so our own role follows the member list.
@@ -74,4 +82,8 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     set((s) => (playback.version > s.playback.version ? { playback } : {})),
   setQueue: (queue) => set({ queue }),
   setSkipVotes: (skipVotes) => set({ skipVotes }),
+  addChat: (message) =>
+    set((s) =>
+      s.chat.some((m) => m.id === message.id) ? {} : { chat: [...s.chat, message].slice(-CHAT_CAP) },
+    ),
 }));

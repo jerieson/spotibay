@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { chatMessageSchema } from './chat.js';
 import { avatarSchema } from './identity.js';
 import {
   playbackStateSchema,
@@ -107,6 +108,8 @@ export const roomStateSchema = z.object({
   /** Upcoming items; the one playing now is `playback.item`. */
   queue: z.array(queueItemSchema),
   skipVotes: skipVotesSchema,
+  /** The latest messages, oldest first. Empty when chat is turned off. */
+  chat: z.array(chatMessageSchema),
   sync: syncConfigSchema,
 });
 export type RoomState = z.infer<typeof roomStateSchema>;

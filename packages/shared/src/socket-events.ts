@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import {
+  chatBodySchema,
+  reactionEmojiSchema,
+  type ChatMessage,
+  type ChatReaction,
+} from './chat.js';
+import {
   MAX_QUEUE_URL_LENGTH,
   type PlaybackState,
   type QueueItem,
@@ -35,6 +41,8 @@ export const socketErrorCodes = [
   'duplicate_track',
   'playlist_not_found',
   'youtube_unavailable',
+  'rate_limited',
+  'feature_disabled',
   'internal_error',
 ] as const;
 export type SocketErrorCode = (typeof socketErrorCodes)[number];
@@ -78,6 +86,9 @@ export const clientEventSchemas = {
     queueItemId: z.string().min(1),
     value: voteValueSchema.or(z.literal(0)),
   }),
+  /** Length is capped by `limits.chatMessageMaxLength`, which is a setting, so the service checks it. */
+  'chat:send': z.object({ body: chatBodySchema }),
+  'chat:react': z.object({ emoji: reactionEmojiSchema }),
 } as const;
 
 export type ClientEventPayloads = {
@@ -107,6 +118,8 @@ export interface ClientToServerEvents {
   'queue:remove': (payload: ClientEventPayloads['queue:remove']) => void;
   'queue:reorder': (payload: ClientEventPayloads['queue:reorder']) => void;
   'queue:vote': (payload: ClientEventPayloads['queue:vote']) => void;
+  'chat:send': (payload: ClientEventPayloads['chat:send']) => void;
+  'chat:react': (payload: ClientEventPayloads['chat:react']) => void;
 }
 
 export interface ServerToClientEvents {
@@ -119,5 +132,7 @@ export interface ServerToClientEvents {
   'playback:skipVotes': (votes: SkipVotes) => void;
   'queue:updated': (payload: { queue: QueueItem[] }) => void;
   'queue:addManyResult': (result: AddManyResult) => void;
+  'chat:message': (message: ChatMessage) => void;
+  'chat:reaction': (reaction: ChatReaction) => void;
   error: (error: SocketError) => void;
 }

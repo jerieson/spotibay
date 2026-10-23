@@ -85,3 +85,32 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+@keyframes reaction-float {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(0.8);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-9rem) scale(1.4);
+  }
+}
+
+.reaction-float {
+  animation: reaction-float 2.4s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction-float {
+    animation-name: reaction-fade;
+  }
+  @keyframes reaction-fade {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

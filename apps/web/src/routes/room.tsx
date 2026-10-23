@@ -3,12 +3,15 @@ import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { roomCodeSchema } from '@spotibay/shared';
 import { CopyButton } from '@/components/copy-button';
+import { ChatPanel } from '@/components/room/chat-panel';
 import { AddMusicSheet } from '@/components/room/add-music-sheet';
 import { PlayerPanel } from '@/components/room/player-panel';
 import { QueuePanel } from '@/components/room/queue-panel';
+import { ReactionBar } from '@/components/room/reaction-bar';
 import { MemberList } from '@/components/room/member-list';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRoomConnection } from '@/hooks/use-room';
 import { useSession } from '@/hooks/use-session';
 import { useRoomStore } from '@/stores/room';
@@ -64,17 +67,27 @@ function Room({ code }: { code: string }) {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-4">
           <PlayerPanel />
+          <ReactionBar />
           <AddMusicSheet />
         </div>
-        <div className="space-y-6">
-          <section aria-label="Queue">
-            <QueuePanel code={room.code} />
-          </section>
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold text-muted-foreground">In the room</h2>
+        <Tabs defaultValue="chat" className="min-w-0">
+          <TabsList className="w-full">
+            <TabsTrigger value="chat">Chat</TabsTrigger>
+            <TabsTrigger value="queue">Queue</TabsTrigger>
+            <TabsTrigger value="members">In the room ({members.length})</TabsTrigger>
+          </TabsList>
+          <TabsContent value="chat">
+            <ChatPanel />
+          </TabsContent>
+          <TabsContent value="queue">
+            <section aria-label="Queue">
+              <QueuePanel code={room.code} />
+            </section>
+          </TabsContent>
+          <TabsContent value="members">
             <MemberList members={members} selfId={you.userId} viewerRole={you.role} />
-          </section>
-        </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

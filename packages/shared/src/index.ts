@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+export * from './chat.js';
 export * from './identity.js';
 export * from './playback.js';
 export * from './playlists.js';

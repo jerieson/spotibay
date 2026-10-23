@@ -29,6 +29,8 @@ import { createYouTubeService } from '../../src/services/youtube.js';
 import { createPresence } from '../../src/services/presence.js';
 import { createRoomLifecycle } from '../../src/services/room-lifecycle.js';
 import { createRoomService } from '../../src/services/rooms.js';
+import { createChatService } from '../../src/services/chat.js';
+import { createChatStore } from '../../src/services/chat-store.js';
 import { createLibraryService } from '../../src/services/library.js';
 import { createPlaylistService } from '../../src/services/playlists.js';
 import { createSearchService } from '../../src/services/search.js';
@@ -173,6 +175,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     rooms,
     settings,
   });
+  const chat = createChatService({ store: createChatStore(db), redis, settings });
   const playlists = createPlaylistService({ db, youtube, settings });
   const library = createLibraryService({ db });
   const lifecycle = createRoomLifecycle({
@@ -201,6 +204,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     presence,
     lifecycle,
     playback,
+    chat,
     playlists,
     maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
     syncConfig: () => ({

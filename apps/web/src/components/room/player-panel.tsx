@@ -2,6 +2,7 @@ import { Pause, Play, RefreshCw, SkipForward, ThumbsDown, Volume2 } from 'lucide
 import { useEffect, useRef, useState } from 'react';
 import { expectedPositionMs } from '@spotibay/shared';
 import { LikeButton } from '@/components/library/like-button';
+import { ReactionLayer } from '@/components/room/reaction-layer';
 import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
 import { usePlaybackSync } from '@/hooks/use-playback-sync';
@@ -80,6 +81,7 @@ export function PlayerPanel() {
     <section className="overflow-hidden rounded-2xl border bg-card" aria-label="Player">
       <div className="relative aspect-video bg-black">
         <div ref={containerRef} className="absolute inset-0 [&_iframe]:size-full" />
+        <ReactionLayer />
         {error && (
           <p className="absolute inset-0 grid place-items-center p-4 text-center text-sm text-white">
             {error}
