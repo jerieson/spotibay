@@ -4,6 +4,14 @@ import { db, pool } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { env } from './env.js';
 import { connectRedis, redis } from './redis.js';
+import { createAdminAuth } from './services/admin-auth.js';
+import { createAdminService } from './services/admin.js';
+import {
+  createAdminDataStore,
+  createAdminStore,
+  createAuditStore,
+} from './services/admin-store.js';
+import { createAuditService } from './services/audit.js';
 import { createChatService } from './services/chat.js';
 import { createChatStore } from './services/chat-store.js';
 import { createLibraryService } from './services/library.js';
@@ -57,6 +65,23 @@ const chat = createChatService({ store: createChatStore(db), redis, settings });
 const playlists = createPlaylistService({ db, youtube, settings });
 const library = createLibraryService({ db });
 const lifecycle = createRoomLifecycle({ rooms, presence });
+const adminAuth = createAdminAuth({
+  store: createAdminStore(db),
+  jwtSecret: env.JWT_SECRET,
+  username: env.ADMIN_USERNAME,
+  passwordHash: env.ADMIN_PASSWORD_HASH,
+});
+await adminAuth.sync();
+if (!adminAuth.enabled) console.warn('ADMIN_PASSWORD_HASH is not set; the admin panel is disabled');
+const adminService = createAdminService({
+  store: createAdminDataStore(db),
+  audit: createAuditService(createAuditStore(db)),
+  rooms,
+  presence,
+  playback,
+  chat,
+  settings,
+});
 
 const app = createApp({
   checks: {
@@ -71,6 +96,7 @@ const app = createApp({
   search,
   playlists,
   library,
+  admin: { auth: adminAuth, service: adminService, redis, settings },
   wordFilter: () => settings.get('moderation.wordFilter'),
   secureCookie: env.NODE_ENV === 'production',
 });
@@ -86,6 +112,7 @@ createSocketServer({
   playback,
   chat,
   playlists,
+  admin: { auth: adminAuth, service: adminService, settings },
   maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
   syncConfig: () => ({
     driftThresholdMs: settings.get('sync.driftThresholdMs'),

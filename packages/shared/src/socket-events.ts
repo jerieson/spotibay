@@ -12,6 +12,7 @@ import {
   type SkipVotes,
   voteValueSchema,
 } from './playback.js';
+import type { AdminStats, PublicSettingKey } from './admin.js';
 import { MAX_BATCH_VIDEOS, videoIdSchema, type AddManyResult } from './playlists.js';
 import {
   assignableRoleSchema,
@@ -22,6 +23,13 @@ import {
   type Room,
   type RoomState,
 } from './rooms.js';
+import type { Announcement } from './settings.js';
+
+export interface SettingsUpdate {
+  key: PublicSettingKey;
+  value: unknown;
+  version: number;
+}
 
 export const socketErrorCodes = [
   'invalid_payload',
@@ -55,7 +63,12 @@ export interface SocketError {
 /** Zod schemas for every inbound payload, keyed by event name. */
 export const clientEventSchemas = {
   'time:ping': z.object({ t0: z.number() }),
-  'room:join': z.object({ code: roomCodeSchema, password: roomPasswordSchema.optional() }),
+  'room:join': z.object({
+    code: roomCodeSchema,
+    password: roomPasswordSchema.optional(),
+    /** Join with host powers and skip the password. Honoured only for a signed-in admin. */
+    asAdmin: z.boolean().optional(),
+  }),
   'room:leave': z.undefined(),
   'room:update': updateRoomBodySchema,
   'room:setRole': z.object({ userId: z.string().min(1), role: assignableRoleSchema }),
@@ -133,6 +146,12 @@ export interface ServerToClientEvents {
   'queue:updated': (payload: { queue: QueueItem[] }) => void;
   'queue:addManyResult': (result: AddManyResult) => void;
   'chat:message': (message: ChatMessage) => void;
+  'chat:deleted': (payload: { id: string }) => void;
+  'settings:updated': (payload: SettingsUpdate) => void;
+  'site:announcement': (payload: { announcement: Announcement | null }) => void;
+  /** Sent on the `/admin` namespace only. */
+  'admin:stats': (stats: AdminStats) => void;
+  'user:kicked': (payload: { reason: 'kicked' | 'banned' }) => void;
   'chat:reaction': (reaction: ChatReaction) => void;
   error: (error: SocketError) => void;
 }

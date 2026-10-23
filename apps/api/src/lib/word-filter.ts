@@ -1,4 +1,13 @@
-const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', $: 's' };
+const LEET: Record<string, string> = {
+  '0': 'o',
+  '1': 'i',
+  '3': 'e',
+  '4': 'a',
+  '5': 's',
+  '7': 't',
+  '@': 'a',
+  $: 's',
+};
 
 /** Lowercases, maps common leetspeak and drops everything that is not a letter or digit. */
 export function normalizeForFilter(text: string): string {

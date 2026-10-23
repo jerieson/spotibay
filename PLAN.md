@@ -317,17 +317,17 @@ _(Fair mode refinement: the user whose track is playing goes to the back of the 
 
 ### Phase 9 — Super admin
 
-- [ ] On api start, upsert the admin from `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH`
-- [ ] `POST /api/admin/login` (rate limited: 5 attempts / 15 min per IP), separate admin cookie, `POST /api/admin/logout`; all `/api/admin/*` routes require it
-- [ ] Settings: `GET /api/admin/settings`, `PUT /api/admin/settings/:key`; changes apply live through the settings service and broadcast `settings:updated` to clients
-- [ ] Rooms: list active rooms (members, now playing, queue length), view room, close room, join any room as host override
-- [ ] Users: search by name, view, kick from room, ban (user or IP, with duration and reason), unban; list bans
-- [ ] Chat moderation: delete any message (`chat:deleted` broadcast), edit word filter
-- [ ] Quota dashboard: today's units and search calls vs budget, last 14 days chart
-- [ ] Site: maintenance mode (non-admin requests get 503 page; sockets refused), announcement banner (`site:announcement`)
-- [ ] Every admin action writes `admin_audit_log`; audit log page with filters
-- [ ] Admin socket namespace `/admin` for live counts (rooms, users online)
-- [ ] Web: `/admin` lazy-loaded route with sidebar: Dashboard, Settings (form generated from the settings schema, grouped by prefix, with descriptions), Rooms, Users & Bans, Chat, Quota, Audit Log
+- [x] On api start, upsert the admin from `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH`
+- [x] `POST /api/admin/login` (rate limited: 5 attempts / 15 min per IP), separate admin cookie, `POST /api/admin/logout`; all `/api/admin/*` routes require it
+- [x] Settings: `GET /api/admin/settings`, `PUT /api/admin/settings/:key`; changes apply live through the settings service and broadcast `settings:updated` to clients
+- [x] Rooms: list active rooms (members, now playing, queue length), view room, close room, join any room as host override
+- [x] Users: search by name, view, kick from room, ban (user or IP, with duration and reason), unban; list bans
+- [x] Chat moderation: delete any message (`chat:deleted` broadcast), edit word filter
+- [x] Quota dashboard: today's units and search calls vs budget, last 14 days chart
+- [x] Site: maintenance mode (non-admin requests get 503 page; sockets refused), announcement banner (`site:announcement`)
+- [x] Every admin action writes `admin_audit_log`; audit log page with filters
+- [x] Admin socket namespace `/admin` for live counts (rooms, users online)
+- [x] Web: `/admin` lazy-loaded route with sidebar: Dashboard, Settings (form generated from the settings schema, grouped by prefix, with descriptions), Rooms, Users & Bans, Chat, Quota, Audit Log
 
 **Done when:** changing `limits.maxUsersPerRoom` in the admin panel takes effect immediately without restart; ban, kick, close room, maintenance mode, and announcement all work; audit log records each. Tests cover admin auth and settings updates.
 

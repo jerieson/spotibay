@@ -1,10 +1,14 @@
-import express, { type ErrorRequestHandler } from 'express';
-import type { HealthResponse } from '@spotibay/shared';
+import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
+import type { Redis } from 'ioredis';
+import type { HealthResponse, SiteResponse } from '@spotibay/shared';
 import { attachUser, banGuard } from './middleware/session.js';
+import { attachAdmin, createAdminRouter } from './routes/admin.js';
 import { createLibraryRouter } from './routes/library.js';
 import { createRoomsRouter } from './routes/rooms.js';
 import { createSearchRouter } from './routes/search.js';
 import { createSessionRouter } from './routes/session.js';
+import type { AdminAuth } from './services/admin-auth.js';
+import type { AdminService } from './services/admin.js';
 import type { BanStore } from './services/bans.js';
 import type { IdentityService } from './services/identity.js';
 import type { LibraryService } from './services/library.js';
@@ -13,10 +17,18 @@ import type { PlaylistService } from './services/playlists.js';
 import type { Presence } from './services/presence.js';
 import type { RoomService } from './services/rooms.js';
 import type { SearchService } from './services/search.js';
+import type { SettingsService } from './services/settings.js';
 
 export interface HealthChecks {
   db: () => Promise<unknown>;
   redis: () => Promise<unknown>;
+}
+
+export interface AdminDeps {
+  auth: AdminAuth;
+  service: AdminService;
+  redis: Redis;
+  settings: Pick<SettingsService, 'get'>;
 }
 
 export interface AppDeps {
@@ -35,6 +47,8 @@ export interface AppDeps {
   /** Playlist, likes and listening-history routes are mounted when both are provided. */
   playlists?: PlaylistService;
   library?: LibraryService;
+  /** Admin routes, `/api/site` and the maintenance gate are mounted when this is provided. */
+  admin?: AdminDeps;
   secureCookie?: boolean;
 }
 
@@ -71,6 +85,7 @@ export function createApp({
   search,
   playlists,
   library,
+  admin,
   secureCookie = true,
 }: AppDeps = {}) {
   const app = express();
@@ -89,8 +104,37 @@ export function createApp({
     res.status(body.status === 'ok' ? 200 : 503).json(body);
   });
 
+  if ((identity && bans) || admin) app.use('/api', express.json({ limit: '16kb' }));
+
+  if (admin) {
+    const { settings } = admin;
+    app.get('/api/site', (_req, res) => {
+      const body: SiteResponse = {
+        maintenance: settings.get('site.maintenanceMode'),
+        announcement: settings.get('site.announcement'),
+      };
+      res.json(body);
+    });
+    app.use(
+      '/api/admin',
+      createAdminRouter({
+        auth: admin.auth,
+        admin: admin.service,
+        redis: admin.redis,
+        secureCookie,
+      }),
+    );
+    const maintenanceGate: RequestHandler = (req, res, next) => {
+      if (settings.get('site.maintenanceMode') && !req.admin) {
+        res.status(503).json({ error: 'maintenance', message: 'Spotibay is down for maintenance' });
+        return;
+      }
+      next();
+    };
+    app.use('/api', attachAdmin(admin.auth), maintenanceGate);
+  }
+
   if (identity && bans) {
-    app.use('/api', express.json({ limit: '16kb' }));
     app.use('/api', attachUser(identity, secureCookie), banGuard(bans));
     app.use(
       '/api',

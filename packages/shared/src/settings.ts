@@ -9,6 +9,8 @@ export const announcementSchema = z.object({
   level: z.enum(['info', 'warning', 'critical']),
 });
 
+export type Announcement = z.infer<typeof announcementSchema>;
+
 export const settingsSchemas = {
   'features.chat': bool,
   'features.reactions': bool,

@@ -6,6 +6,7 @@ import {
   playlistListResponseSchema,
   playlistResponseSchema,
   sharedPlaylistResponseSchema,
+  siteResponseSchema,
   meResponseSchema,
   recoveryCodeResponseSchema,
   roomHistoryResponseSchema,
@@ -26,6 +27,7 @@ import {
   type RoomSummary,
   type SearchResponse,
   type SessionResponse,
+  type SiteResponse,
   type UpdateMeBody,
   type User,
 } from '@spotibay/shared';
@@ -66,6 +68,10 @@ async function request<T extends z.ZodType>(
 
 export async function fetchHealth(): Promise<HealthResponse> {
   return request(healthResponseSchema, '/api/health');
+}
+
+export function fetchSite(): Promise<SiteResponse> {
+  return request(siteResponseSchema, '/api/site');
 }
 
 export function startSession(): Promise<SessionResponse> {

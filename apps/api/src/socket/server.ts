@@ -1,8 +1,11 @@
 import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 import {
+  ADMIN_COOKIE,
+  ADMIN_STATS_INTERVAL_MS,
   SESSION_COOKIE,
   clientEventSchemas,
+  isPublicSettingKey,
   type ClientToServerEvents,
   type JoinAck,
   type ServerToClientEvents,
@@ -12,6 +15,8 @@ import {
   type SyncConfig,
 } from '@spotibay/shared';
 import { readCookie } from '../middleware/session.js';
+import type { AdminAuth } from '../services/admin-auth.js';
+import type { AdminService } from '../services/admin.js';
 import type { BanStore } from '../services/bans.js';
 import type { IdentityService, UserRecord } from '../services/identity.js';
 import { ChatError, type ChatService } from '../services/chat.js';
@@ -20,10 +25,13 @@ import { PlaylistError, type PlaylistService } from '../services/playlists.js';
 import type { Presence } from '../services/presence.js';
 import type { RoomLifecycle } from '../services/room-lifecycle.js';
 import { RoomError, toRoom, type RoomRow, type RoomService } from '../services/rooms.js';
+import type { SettingsService } from '../services/settings.js';
 
 interface SocketData {
   user: UserRecord;
   ip: string;
+  /** Set when the handshake carried a valid admin cookie. */
+  adminId?: string;
   roomId?: string;
   /** Handlers for one socket run one at a time, in arrival order. */
   queue: Promise<void>;
@@ -47,6 +55,8 @@ export interface SocketServerDeps {
   playback: PlaybackService;
   chat: ChatService;
   playlists: Pick<PlaylistService, 'videoIdsForQueue'>;
+  /** Admin features: maintenance gate, kicks and bans, live settings, the `/admin` namespace. */
+  admin?: { auth: AdminAuth; service: AdminService; settings: SettingsService };
   maxUsersPerRoom: () => number;
   syncConfig: () => SyncConfig;
   onError?: (err: unknown) => void;
@@ -91,10 +101,17 @@ export function createSocketServer(deps: SocketServerDeps) {
         return;
       }
       const ip = clientIp(socket.request, socket.handshake.address);
+      const adminToken = readCookie(socket.handshake.headers.cookie, ADMIN_COOKIE);
+      const admin = deps.admin ? await deps.admin.auth.verify(adminToken) : null;
+      if (deps.admin?.settings.get('site.maintenanceMode') && !admin) {
+        next(new Error('maintenance'));
+        return;
+      }
       if (await isBanned(user, ip)) {
         next(new Error('banned'));
         return;
       }
+      socket.data.adminId = admin?.id;
       socket.data.user = user;
       socket.data.ip = ip;
       socket.data.queue = Promise.resolve();
@@ -219,10 +236,16 @@ export function createSocketServer(deps: SocketServerDeps) {
     });
 
     const user = socket.data.user;
+    const adminJoin = payload.asAdmin === true;
+    if (adminJoin && !socket.data.adminId) {
+      return reject('forbidden', 'Admin sign-in required');
+    }
     const row = await rooms.findByCode(payload.code);
     if (!row) return reject('room_not_found', 'Room not found');
     if (row.closedAt) return reject('room_closed', 'This room has been closed');
-    if (await isBanned(user, socket.data.ip)) return reject('banned', 'You are banned');
+    if (!adminJoin && (await isBanned(user, socket.data.ip))) {
+      return reject('banned', 'You are banned');
+    }
 
     if (socket.data.roomId === row.id && (await presence.get(row.id, user.id))) {
       const state = await roomStateFor(row, user.id);
@@ -232,30 +255,41 @@ export function createSocketServer(deps: SocketServerDeps) {
     await leaveCurrentRoom(socket);
 
     const isHost = row.ownerId === user.id;
-    if (!isHost && !(await rooms.checkPassword(row, payload.password))) {
+    if (!isHost && !adminJoin && !(await rooms.checkPassword(row, payload.password))) {
       return reject('wrong_password', 'Wrong room password');
     }
     const joined = await presence.join(
       row.id,
       user,
-      isHost ? 'host' : 'listener',
-      deps.maxUsersPerRoom(),
+      isHost || adminJoin ? 'host' : 'listener',
+      adminJoin ? Number.MAX_SAFE_INTEGER : deps.maxUsersPerRoom(),
     );
     if (!joined.ok) return reject('room_full', 'This room is full');
+    if (adminJoin) {
+      // A user already in the room as a listener keeps their entry, so lift the role explicitly.
+      await presence.setRole(row.id, user.id, 'host');
+      await deps.admin?.service.recordAudit({
+        adminId: socket.data.adminId!,
+        action: 'room.join_override',
+        targetType: 'room',
+        targetId: row.code,
+      });
+    }
 
     socket.data.roomId = row.id;
     await socket.join(roomChannel(row.id));
     const state = await roomStateFor(row, user.id);
     if (state) socket.emit('room:state', state);
-    if (joined.isNew) {
-      chat.system(row.id, `${user.displayName} joined`);
-      await broadcastMembers(row.id);
-    }
+    if (joined.isNew) chat.system(row.id, `${user.displayName} joined`);
+    if (joined.isNew || adminJoin) await broadcastMembers(row.id);
     await lifecycle.reconcile(row.id);
     return { ok: true };
   }
 
   io.on('connection', (socket) => {
+    const announcement = deps.admin?.settings.get('site.announcement');
+    if (announcement) socket.emit('site:announcement', { announcement });
+
     socket.on('time:ping', (raw: unknown) => {
       const payload = parse(socket, 'time:ping', raw);
       if (payload) socket.emit('time:pong', { t0: payload.t0, serverTime: Date.now() });
@@ -482,6 +516,9 @@ export function createSocketServer(deps: SocketServerDeps) {
   chat.onMessage((roomId, message) => {
     io.to(roomChannel(roomId)).emit('chat:message', message);
   });
+  chat.onDeleted((roomId, id) => {
+    io.to(roomChannel(roomId)).emit('chat:deleted', { id });
+  });
   chat.onReaction((roomId, reaction) => {
     io.to(roomChannel(roomId)).emit('chat:reaction', reaction);
   });
@@ -497,6 +534,85 @@ export function createSocketServer(deps: SocketServerDeps) {
     io.to(channel).emit('room:closed', { reason });
     io.in(channel).socketsLeave(channel);
   });
+
+  if (deps.admin) setUpAdmin(deps.admin);
+
+  function localSockets(match: (socket: AppSocket) => boolean): AppSocket[] {
+    return [...io.sockets.sockets.values()].filter(match);
+  }
+
+  function setUpAdmin({ auth, service, settings }: NonNullable<SocketServerDeps['admin']>) {
+    service.attach({
+      async kickUser(roomId, userId, reason) {
+        for (const s of localSockets(
+          (x) => x.data.user.id === userId && x.data.roomId === roomId,
+        )) {
+          s.emit('user:kicked', { reason });
+          enqueue(s, () => leaveCurrentRoom(s));
+        }
+      },
+      async disconnectUser(userId) {
+        for (const s of localSockets((x) => x.data.user.id === userId)) {
+          s.emit('user:kicked', { reason: 'banned' });
+          s.disconnect(true);
+        }
+      },
+      async disconnectIp(ip) {
+        for (const s of localSockets((x) => x.data.ip === ip)) {
+          s.emit('user:kicked', { reason: 'banned' });
+          s.disconnect(true);
+        }
+      },
+      async userIps(userId) {
+        return [...new Set(localSockets((x) => x.data.user.id === userId).map((x) => x.data.ip))];
+      },
+      async onlineUserCount() {
+        return new Set(localSockets(() => true).map((x) => x.data.user.id)).size;
+      },
+    });
+
+    settings.onChange(({ key, value, version }) => {
+      if (isPublicSettingKey(key)) io.emit('settings:updated', { key, value, version });
+      if (key === 'site.announcement') {
+        io.emit('site:announcement', { announcement: settings.get('site.announcement') });
+      }
+      if (key === 'site.maintenanceMode' && value === true) {
+        for (const s of localSockets((x) => !x.data.adminId)) {
+          s.emit('error', { code: 'maintenance', message: 'Spotibay is down for maintenance' });
+          s.disconnect(true);
+        }
+      }
+    });
+
+    const adminNs = io.of('/admin');
+    adminNs.use(async (socket, next) => {
+      try {
+        const admin = await auth.verify(readCookie(socket.handshake.headers.cookie, ADMIN_COOKIE));
+        next(admin ? undefined : new Error('unauthenticated'));
+      } catch (err) {
+        onError(err);
+        next(new Error('internal_error'));
+      }
+    });
+    let timer: NodeJS.Timeout | undefined;
+    const pushStats = () => {
+      service
+        .stats()
+        .then((stats) => adminNs.emit('admin:stats', stats))
+        .catch(onError);
+    };
+    adminNs.on('connection', (socket) => {
+      pushStats();
+      timer ??= setInterval(pushStats, ADMIN_STATS_INTERVAL_MS);
+      timer.unref();
+      socket.on('disconnect', () => {
+        if (adminNs.sockets.size === 0 && timer) {
+          clearInterval(timer);
+          timer = undefined;
+        }
+      });
+    });
+  }
 
   return io;
 }

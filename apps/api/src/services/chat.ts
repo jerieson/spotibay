@@ -43,6 +43,7 @@ export interface ChatServiceDeps {
 export function createChatService({ store, redis, settings, now = Date.now }: ChatServiceDeps) {
   const messageListeners = new Set<(roomId: string, message: ChatMessage) => void>();
   const reactionListeners = new Set<(roomId: string, reaction: ChatReaction) => void>();
+  const deletedListeners = new Set<(roomId: string, messageId: string) => void>();
 
   function emitMessage(roomId: string, message: ChatMessage) {
     for (const listener of messageListeners) listener(roomId, message);
@@ -97,21 +98,36 @@ export function createChatService({ store, redis, settings, now = Date.now }: Ch
     if (!settings.get('features.reactions')) {
       throw new ChatError('feature_disabled', 'Reactions are turned off');
     }
-    const allowed = await hit(redis, `ratelimit:react:${userId}`, REACTION_LIMIT, REACTION_WINDOW_SEC);
+    const allowed = await hit(
+      redis,
+      `ratelimit:react:${userId}`,
+      REACTION_LIMIT,
+      REACTION_WINDOW_SEC,
+    );
     // Reactions are cheap and noisy; dropping the excess beats nagging with an error per tap.
     if (!allowed) return;
     const reaction: ChatReaction = { id: randomUUID(), userId, emoji };
     for (const listener of reactionListeners) listener(roomId, reaction);
   }
 
+  /** Tells the room a message was removed by a moderator. */
+  function announceDeleted(roomId: string, messageId: string): void {
+    for (const listener of deletedListeners) listener(roomId, messageId);
+  }
+
   return {
     send,
+    announceDeleted,
     system,
     history,
     react,
     onMessage(listener: (roomId: string, message: ChatMessage) => void) {
       messageListeners.add(listener);
       return () => messageListeners.delete(listener);
+    },
+    onDeleted(listener: (roomId: string, messageId: string) => void) {
+      deletedListeners.add(listener);
+      return () => deletedListeners.delete(listener);
     },
     onReaction(listener: (roomId: string, reaction: ChatReaction) => void) {
       reactionListeners.add(listener);

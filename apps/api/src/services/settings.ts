@@ -128,4 +128,3 @@ const redisVersion: VersionCounter = {
 };
 
 export const settings = createSettingsService(dbStore, redisVersion);
-

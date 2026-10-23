@@ -38,6 +38,7 @@ interface RoomStoreState {
   setQueue: (queue: QueueItem[]) => void;
   setSkipVotes: (skipVotes: SkipVotes) => void;
   addChat: (message: ChatMessage) => void;
+  removeChat: (id: string) => void;
 }
 
 const initial = {
@@ -84,6 +85,9 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   setSkipVotes: (skipVotes) => set({ skipVotes }),
   addChat: (message) =>
     set((s) =>
-      s.chat.some((m) => m.id === message.id) ? {} : { chat: [...s.chat, message].slice(-CHAT_CAP) },
+      s.chat.some((m) => m.id === message.id)
+        ? {}
+        : { chat: [...s.chat, message].slice(-CHAT_CAP) },
     ),
+  removeChat: (id) => set((s) => ({ chat: s.chat.filter((m) => m.id !== id) })),
 }));

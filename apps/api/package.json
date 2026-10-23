@@ -10,6 +10,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
+    "hash-password": "tsx src/scripts/hash-password.ts",
     "db:migrate": "tsx --env-file-if-exists=.env src/scripts/migrate.ts"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 import { Lock } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { roomCodeSchema } from '@spotibay/shared';
 import { CopyButton } from '@/components/copy-button';
 import { ChatPanel } from '@/components/room/chat-panel';
@@ -26,7 +26,8 @@ export function RoomPage() {
 
 function Room({ code }: { code: string }) {
   const session = useSession();
-  const { submitPassword } = useRoomConnection(code);
+  const [searchParams] = useSearchParams();
+  const { submitPassword } = useRoomConnection(code, searchParams.get('admin') === '1');
   const { status, error, room, members, you } = useRoomStore();
 
   if (status === 'closed') return <Notice title="This room has been closed" />;

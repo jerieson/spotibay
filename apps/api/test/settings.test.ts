@@ -65,10 +65,17 @@ describe('settings service', () => {
     const svc = createSettingsService(fake.store, versions);
     await svc.load();
     const change = await svc.set('limits.maxQueueLength', 100, 'admin-1');
-    expect(change).toMatchObject({ key: 'limits.maxQueueLength', value: 100, previous: 200, version: 1 });
+    expect(change).toMatchObject({
+      key: 'limits.maxQueueLength',
+      value: 100,
+      previous: 200,
+      version: 1,
+    });
     expect(svc.get('limits.maxQueueLength')).toBe(100);
     expect(svc.version).toBe(1);
-    expect(fake.upserts).toEqual([{ key: 'limits.maxQueueLength', value: 100, adminId: 'admin-1' }]);
+    expect(fake.upserts).toEqual([
+      { key: 'limits.maxQueueLength', value: 100, adminId: 'admin-1' },
+    ]);
     await svc.set('limits.maxQueueLength', 150, null);
     expect(svc.version).toBe(2);
   });
@@ -77,9 +84,15 @@ describe('settings service', () => {
     const versions = counter();
     const svc = createSettingsService(fake.store, versions);
     await svc.load();
-    await expect(svc.set('limits.maxQueueLength', -1, 'a')).rejects.toBeInstanceOf(SettingsValidationError);
-    await expect(svc.set('queue.skipVoteThreshold', 1.5, 'a')).rejects.toBeInstanceOf(SettingsValidationError);
-    await expect(svc.set('site.announcement', { text: 'hi', level: 'nope' }, 'a')).rejects.toThrow();
+    await expect(svc.set('limits.maxQueueLength', -1, 'a')).rejects.toBeInstanceOf(
+      SettingsValidationError,
+    );
+    await expect(svc.set('queue.skipVoteThreshold', 1.5, 'a')).rejects.toBeInstanceOf(
+      SettingsValidationError,
+    );
+    await expect(
+      svc.set('site.announcement', { text: 'hi', level: 'nope' }, 'a'),
+    ).rejects.toThrow();
     expect(fake.upserts).toHaveLength(0);
     expect(versions.bump).not.toHaveBeenCalled();
     expect(svc.get('limits.maxQueueLength')).toBe(200);

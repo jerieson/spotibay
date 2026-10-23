@@ -15,7 +15,17 @@ import {
   type SocketError,
   type User,
 } from '@spotibay/shared';
+import { io as connectNamespace } from 'socket.io-client';
 import { createApp } from '../../src/app.js';
+import { hashPassword } from '../../src/lib/password.js';
+import { createAdminAuth } from '../../src/services/admin-auth.js';
+import { createAdminService } from '../../src/services/admin.js';
+import {
+  createAdminDataStore,
+  createAdminStore,
+  createAuditStore,
+} from '../../src/services/admin-store.js';
+import { createAuditService } from '../../src/services/audit.js';
 import * as schema from '../../src/db/schema.js';
 import { createIdentityService } from '../../src/services/identity.js';
 import { createPlaybackService } from '../../src/services/playback.js';
@@ -38,6 +48,8 @@ import { createSettingsService } from '../../src/services/settings.js';
 import { createBanStore, createRoomStore, createUserStore } from '../../src/services/user-store.js';
 import { createSocketServer } from '../../src/socket/server.js';
 
+export const ADMIN_USERNAME = 'admin';
+export const ADMIN_PASSWORD = 'correct horse battery';
 const TEST_DB_NAME = 'spotibay_test';
 const TEST_REDIS_DB = 15;
 const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url));
@@ -184,7 +196,24 @@ export async function createHarness(options: HarnessOptions = {}) {
     hostGraceMs: options.hostGraceMs,
     emptyTtlMs: options.emptyTtlMs,
   });
+  const adminAuth = createAdminAuth({
+    store: createAdminStore(db),
+    jwtSecret: 'j'.repeat(40),
+    username: ADMIN_USERNAME,
+    passwordHash: await hashPassword(ADMIN_PASSWORD),
+  });
+  await adminAuth.sync();
+  const adminService = createAdminService({
+    store: createAdminDataStore(db),
+    audit: createAuditService(createAuditStore(db)),
+    rooms,
+    presence,
+    playback,
+    chat,
+    settings,
+  });
   const app = createApp({
+    admin: { auth: adminAuth, service: adminService, redis, settings },
     identity,
     bans,
     rooms,
@@ -197,6 +226,7 @@ export async function createHarness(options: HarnessOptions = {}) {
   });
   const httpServer: Server = createServer(app);
   const io = createSocketServer({
+    admin: { auth: adminAuth, service: adminService, settings },
     httpServer,
     identity,
     bans,
@@ -250,6 +280,39 @@ export async function createHarness(options: HarnessOptions = {}) {
     return { user: user as User, cookie, api, socket };
   }
 
+  /** Signs in as the admin; `ip` varies the address the login rate limit sees. */
+  async function admin(ip = '203.0.113.1') {
+    const res = await fetch(`${baseUrl}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+      body: JSON.stringify({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD }),
+    });
+    if (res.status !== 200) throw new Error(`admin login failed: ${res.status}`);
+    const cookie = res.headers.getSetCookie()[0]!.split(';')[0]!;
+
+    async function api<T = unknown>(method: string, path: string, body?: unknown) {
+      const r = await fetch(`${baseUrl}/api/admin${path}`, {
+        method,
+        headers: { cookie, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: r.status, body: (await r.json().catch(() => null)) as T };
+    }
+
+    return { cookie, api };
+  }
+
+  /** A client on the `/admin` namespace. */
+  function adminNamespace(cookie: string) {
+    const socket = connectNamespace(`${baseUrl}/admin`, {
+      transports: ['websocket'],
+      extraHeaders: { cookie },
+      reconnection: false,
+    });
+    sockets.add(socket as unknown as ClientSocket);
+    return socket;
+  }
+
   async function close() {
     lifecycle.stop();
     playback.stop();
@@ -278,6 +341,9 @@ export async function createHarness(options: HarnessOptions = {}) {
     searchCalls,
     quota: quotaStore,
     guest,
+    admin,
+    adminNamespace,
+    adminPassword: ADMIN_PASSWORD,
     connect,
     close,
   };

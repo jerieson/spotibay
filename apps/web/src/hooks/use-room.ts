@@ -1,30 +1,39 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import type { ServerToClientEvents } from '@spotibay/shared';
+import type { ServerToClientEvents, SiteResponse } from '@spotibay/shared';
 import { diffMembers } from '@/lib/members';
 import { timeSync } from '@/lib/clock';
 import { socket } from '@/lib/socket';
+import { siteKey } from '@/hooks/use-site';
 import { useRoomStore } from '@/stores/room';
 
 /** Connects the socket and keeps the room store in sync while the room page is mounted. */
-export function useRoomConnection(code: string) {
+export function useRoomConnection(code: string, asAdmin = false) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const passwordRef = useRef<string | undefined>(undefined);
 
   const join = useCallback(() => {
     const store = useRoomStore.getState();
     store.setStatus('connecting');
-    socket.emit('room:join', { code, password: passwordRef.current }, (res) => {
-      if (res.ok) return; // the snapshot arrives as `room:state`
-      const { code: errorCode } = res.error;
-      const store = useRoomStore.getState();
-      if (errorCode === 'wrong_password') {
-        // The first prompt (no password sent yet) is not an error; a rejected attempt is.
-        store.setStatus('needs-password', passwordRef.current === undefined ? null : res.error);
-      } else {
-        store.setStatus(errorCode === 'room_closed' ? 'closed' : 'failed', res.error);
-      }
-    });
-  }, [code]);
+    socket.emit(
+      'room:join',
+      { code, password: passwordRef.current, asAdmin: asAdmin || undefined },
+      (res) => {
+        if (res.ok) return; // the snapshot arrives as `room:state`
+        const { code: errorCode } = res.error;
+        const store = useRoomStore.getState();
+        if (errorCode === 'wrong_password') {
+          // The first prompt (no password sent yet) is not an error; a rejected attempt is.
+          store.setStatus('needs-password', passwordRef.current === undefined ? null : res.error);
+        } else {
+          store.setStatus(errorCode === 'room_closed' ? 'closed' : 'failed', res.error);
+        }
+      },
+    );
+  }, [code, asAdmin]);
 
   useEffect(() => {
     const store = useRoomStore.getState();
@@ -37,8 +46,16 @@ export function useRoomConnection(code: string) {
     };
     const onConnectError = (err: Error) => {
       useRoomStore.getState().setStatus('failed', {
-        code: err.message === 'banned' ? 'banned' : 'unauthenticated',
-        message: err.message === 'banned' ? 'You are banned from Spotibay.' : 'Could not connect.',
+        code:
+          err.message === 'banned' || err.message === 'maintenance'
+            ? err.message
+            : 'unauthenticated',
+        message:
+          err.message === 'banned'
+            ? 'You are banned from Spotibay.'
+            : err.message === 'maintenance'
+              ? 'Spotibay is down for maintenance.'
+              : 'Could not connect.',
       });
     };
     const onState: ServerToClientEvents['room:state'] = (state) =>
@@ -74,6 +91,22 @@ export function useRoomConnection(code: string) {
     const onChat: ServerToClientEvents['chat:message'] = (message) =>
       useRoomStore.getState().addChat(message);
     const onClosed = () => useRoomStore.getState().setStatus('closed');
+    const onChatDeleted: ServerToClientEvents['chat:deleted'] = ({ id }) =>
+      useRoomStore.getState().removeChat(id);
+    const onKicked: ServerToClientEvents['user:kicked'] = ({ reason }) => {
+      toast.error(
+        reason === 'banned' ? 'You have been banned.' : 'You were removed from the room.',
+      );
+      void navigate('/');
+    };
+    const onSettings: ServerToClientEvents['settings:updated'] = ({ key }) => {
+      if (key === 'site.maintenanceMode') void queryClient.invalidateQueries({ queryKey: siteKey });
+    };
+    const onAnnouncement: ServerToClientEvents['site:announcement'] = ({ announcement }) =>
+      queryClient.setQueryData<SiteResponse>(siteKey, (site) => ({
+        maintenance: site?.maintenance ?? false,
+        announcement,
+      }));
     const onError: ServerToClientEvents['error'] = (err) => toast.error(err.message);
 
     socket.on('connect', onConnect);
@@ -87,6 +120,10 @@ export function useRoomConnection(code: string) {
     socket.on('queue:addManyResult', onAddMany);
     socket.on('chat:message', onChat);
     socket.on('room:closed', onClosed);
+    socket.on('chat:deleted', onChatDeleted);
+    socket.on('user:kicked', onKicked);
+    socket.on('settings:updated', onSettings);
+    socket.on('site:announcement', onAnnouncement);
     socket.on('error', onError);
     socket.connect();
 
@@ -102,12 +139,16 @@ export function useRoomConnection(code: string) {
       socket.off('queue:addManyResult', onAddMany);
       socket.off('chat:message', onChat);
       socket.off('room:closed', onClosed);
+      socket.off('chat:deleted', onChatDeleted);
+      socket.off('user:kicked', onKicked);
+      socket.off('settings:updated', onSettings);
+      socket.off('site:announcement', onAnnouncement);
       socket.off('error', onError);
       timeSync.stop();
       socket.disconnect();
       useRoomStore.getState().reset();
     };
-  }, [join]);
+  }, [join, navigate, queryClient]);
 
   const submitPassword = useCallback(
     (password: string) => {
