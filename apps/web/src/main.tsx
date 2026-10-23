@@ -4,8 +4,11 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AppShell } from '@/components/layout/app-shell';
 import { HomePage } from '@/routes/home';
+import { LibraryPage } from '@/routes/library';
+import { PlaylistPage } from '@/routes/playlist';
 import { ProfilePage } from '@/routes/profile';
 import { RoomPage } from '@/routes/room';
+import { SharedPlaylistPage } from '@/routes/shared-playlist';
 import './index.css';
 
 const queryClient = new QueryClient();
@@ -16,6 +19,9 @@ const router = createBrowserRouter([
       { path: '/', element: <HomePage /> },
       { path: '/r/:code', element: <RoomPage /> },
       { path: '/profile', element: <ProfilePage /> },
+      { path: '/library', element: <LibraryPage /> },
+      { path: '/library/playlists/:id', element: <PlaylistPage /> },
+      { path: '/p/:slug', element: <SharedPlaylistPage /> },
     ],
   },
 ]);

@@ -4,7 +4,9 @@ import { db, pool } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { env } from './env.js';
 import { connectRedis, redis } from './redis.js';
+import { createLibraryService } from './services/library.js';
 import { createIdentityService } from './services/identity.js';
+import { createPlaylistService } from './services/playlists.js';
 import { createPresence } from './services/presence.js';
 import { createPlaybackService } from './services/playback.js';
 import { createPlaybackStore } from './services/playback-store.js';
@@ -49,6 +51,8 @@ const playback = createPlaybackService({
   rooms,
   settings,
 });
+const playlists = createPlaylistService({ db, youtube, settings });
+const library = createLibraryService({ db });
 const lifecycle = createRoomLifecycle({ rooms, presence });
 
 const app = createApp({
@@ -62,6 +66,8 @@ const app = createApp({
   presence,
   playback,
   search,
+  playlists,
+  library,
   wordFilter: () => settings.get('moderation.wordFilter'),
   secureCookie: env.NODE_ENV === 'production',
 });
@@ -75,6 +81,7 @@ createSocketServer({
   presence,
   lifecycle,
   playback,
+  playlists,
   maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
   syncConfig: () => ({
     driftThresholdMs: settings.get('sync.driftThresholdMs'),

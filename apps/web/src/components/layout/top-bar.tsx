@@ -1,4 +1,4 @@
-import { Search } from 'lucide-react';
+import { Library, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -21,6 +21,14 @@ export function TopBar() {
           <Search className="size-4" />
           Search or paste a YouTube link
         </button>
+        <Link
+          to="/library"
+          aria-label="Library"
+          className="flex shrink-0 items-center gap-1.5 rounded-full px-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Library className="size-5" />
+          <span className="hidden sm:inline">Library</span>
+        </Link>
         <ThemeToggle />
         <Link
           to="/profile"

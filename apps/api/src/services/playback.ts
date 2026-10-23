@@ -4,6 +4,7 @@ import {
   orderQueue,
   queueScore,
   skipVotesNeeded,
+  type AddManyResult,
   type HistoryEntry,
   type PlaybackState,
   type QueueItem,
@@ -215,13 +216,9 @@ export function createPlaybackService({
     return { playback, queue: items, skipVotes };
   }
 
-  async function add(roomId: string, userId: string, input: string): Promise<QueueItem> {
-    const videoId = parseVideoId(input);
-    if (!videoId) throw new PlaybackError('invalid_video', 'That is not a YouTube link');
-
-    let track;
+  async function fetchTracks(videoIds: string[]) {
     try {
-      track = (await youtube.getVideos([videoId])).get(videoId);
+      return await youtube.getVideos(videoIds);
     } catch (err) {
       if (err instanceof YouTubeError) {
         throw new PlaybackError(
@@ -233,6 +230,13 @@ export function createPlaybackService({
       }
       throw err;
     }
+  }
+
+  async function add(roomId: string, userId: string, input: string): Promise<QueueItem> {
+    const videoId = parseVideoId(input);
+    if (!videoId) throw new PlaybackError('invalid_video', 'That is not a YouTube link');
+
+    const track = (await fetchTracks([videoId])).get(videoId);
     if (!track) throw new PlaybackError('invalid_video', 'That video was not found');
     if (!track.embeddable) {
       throw new PlaybackError('track_rejected', 'That video cannot be played outside YouTube');
@@ -382,6 +386,57 @@ export function createPlaybackService({
     });
   }
 
+  /**
+   * Queues many videos at once (a playlist, liked songs). Tracks that can't be queued are counted,
+   * not fatal. Hosts and DJs are exempt from the per-user limit; the room limit applies to everyone.
+   */
+  async function addMany(
+    roomId: string,
+    userId: string,
+    role: RoomRole,
+    videoIds: string[],
+  ): Promise<AddManyResult> {
+    const wanted = [...new Set(videoIds)];
+    const found = await fetchTracks(wanted);
+    const maxSec = settings.get('limits.maxTrackDurationSec');
+    const result: AddManyResult = { added: 0, duplicates: 0, unplayable: 0, overLimit: 0 };
+    return withLock(roomId, async () => {
+      const active = await queue.listActive(roomId);
+      const inQueue = new Set(active.map((r) => r.item.track.videoId));
+      let total = active.length;
+      let mine = active.filter(
+        (r) => r.status === 'queued' && r.item.addedBy.userId === userId,
+      ).length;
+      const maxTotal = settings.get('limits.maxQueueLength');
+      const maxMine = settings.get('limits.maxQueueItemsPerUser');
+      const exempt = role !== 'listener';
+      // On an idle room the first track starts playing at once, so it doesn't count as queued.
+      let startsNow = (await store.load(roomId)).status === 'idle';
+      for (const videoId of wanted) {
+        const track = found.get(videoId);
+        if (!track || !track.embeddable || track.durationSec === 0 || track.durationSec > maxSec) {
+          result.unplayable += 1;
+        } else if (inQueue.has(videoId)) {
+          result.duplicates += 1;
+        } else if (total >= maxTotal || (!exempt && mine >= maxMine)) {
+          result.overLimit += 1;
+        } else {
+          await queue.insert({ roomId, videoId, addedBy: userId });
+          inQueue.add(videoId);
+          total += 1;
+          if (startsNow) startsNow = false;
+          else mine += 1;
+          result.added += 1;
+        }
+      }
+      if (result.added > 0) {
+        if ((await store.load(roomId)).status === 'idle') await advance(roomId, 'ended');
+        else await publishQueue(roomId);
+      }
+      return result;
+    });
+  }
+
   function history(roomId: string): Promise<HistoryEntry[]> {
     return queue.listHistory(roomId, HISTORY_LIMIT);
   }
@@ -438,6 +493,7 @@ export function createPlaybackService({
   return {
     snapshot,
     add,
+    addMany,
     vote,
     remove,
     reorder,

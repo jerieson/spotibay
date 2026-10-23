@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export * from './identity.js';
 export * from './playback.js';
+export * from './playlists.js';
 export * from './queue-order.js';
 export * from './rooms.js';
 export * from './search.js';

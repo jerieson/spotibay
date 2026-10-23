@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   roomHistoryResponseSchema,
+  type PlaylistResponse,
   type PlaybackState,
   type QueueItem,
   type RoomResponse,
@@ -368,5 +369,107 @@ describe('history', () => {
       (await host.api('GET', `/rooms/${code}/history`)).body,
     );
     expect(history).toEqual([]);
+  });
+});
+
+describe('queue:addMany', () => {
+  const vids = (n: number) => Array.from({ length: n }, (_, i) => vid(i + 1));
+  const result = (socket: ClientSocket) => next(socket, 'queue:addManyResult');
+
+  beforeEach(() => {
+    for (const v of vids(12)) h.videos.set(v, { durationSec: 300 });
+  });
+
+  it('queues a playlist in order and starts playback when the room is idle', async () => {
+    const { host, hostSocket } = await setupRoom();
+    const p = (await host.api<PlaylistResponse>('POST', '/playlists', { name: 'Mix' })).body
+      .playlist;
+    await host.api('POST', `/playlists/${p.id}/items`, { videoIds: vids(4) });
+
+    const playing = next(hostSocket, 'playback:state', (s) => s.item?.track.videoId === vid(1));
+    const res = result(hostSocket);
+    hostSocket.emit('queue:addMany', { playlistId: p.id });
+    expect(await res).toEqual({ added: 4, duplicates: 0, unplayable: 0, overLimit: 0 });
+    await playing;
+    const again = result(hostSocket);
+    hostSocket.emit('queue:addMany', { playlistId: p.id });
+    expect(await again).toEqual({ added: 0, duplicates: 4, unplayable: 0, overLimit: 0 });
+  });
+
+  it('holds listeners to the per-user limit but not hosts or DJs', async () => {
+    await h.settings.set('limits.maxQueueItemsPerUser', 3, null);
+    const { hostSocket, code } = await setupRoom();
+    const { guest, socket } = await joinAs(await h.guest(), code);
+
+    const first = result(socket);
+    socket.emit('queue:addMany', { videoIds: vids(5) });
+    // The first track starts playing, so the guest keeps 3 queued and 1 more is over the limit.
+    expect(await first).toMatchObject({ added: 4, overLimit: 1 });
+
+    const hostRes = result(hostSocket);
+    hostSocket.emit('queue:addMany', { videoIds: vids(12).slice(5) });
+    expect(await hostRes).toMatchObject({ added: 7, overLimit: 0 });
+
+    hostSocket.emit('room:setRole', { userId: guest.user.id, role: 'dj' });
+    await next(socket, 'room:members', (m) =>
+      m.members.some((x) => x.userId === guest.user.id && x.role === 'dj'),
+    );
+    for (const n of [13, 14, 15]) h.videos.set(vid(n), { durationSec: 300 });
+    const djRes = result(socket);
+    socket.emit('queue:addMany', { videoIds: [vid(13), vid(14), vid(15)] });
+    expect(await djRes).toMatchObject({ added: 3, overLimit: 0 });
+  });
+
+  it('applies the room-wide limit to everyone', async () => {
+    await h.settings.set('limits.maxQueueLength', 3, null);
+    const { hostSocket } = await setupRoom();
+    const res = result(hostSocket);
+    hostSocket.emit('queue:addMany', { videoIds: vids(5) });
+    expect(await res).toMatchObject({ added: 3, overLimit: 2 });
+  });
+
+  it('counts unplayable tracks', async () => {
+    h.videos.set(vid(2), { durationSec: 300, embeddable: false });
+    h.videos.set(vid(3), { durationSec: 99_999 });
+    const { hostSocket } = await setupRoom();
+    const res = result(hostSocket);
+    hostSocket.emit('queue:addMany', { videoIds: [vid(1), vid(2), vid(3), 'zzzzzzzzzzz'] });
+    expect(await res).toEqual({ added: 1, duplicates: 0, unplayable: 3, overLimit: 0 });
+  });
+
+  it('only queues own or public playlists and validates the payload', async () => {
+    const { hostSocket } = await setupRoom();
+    const other = await h.guest();
+    const p = (await other.api<PlaylistResponse>('POST', '/playlists', { name: 'Theirs' })).body
+      .playlist;
+    await other.api('POST', `/playlists/${p.id}/items`, { videoIds: [vid(1)] });
+
+    const denied = next(hostSocket, 'error');
+    hostSocket.emit('queue:addMany', { playlistId: p.id });
+    expect((await denied).code).toBe('playlist_not_found');
+
+    await other.api('PATCH', `/playlists/${p.id}`, { isPublic: true });
+    const ok = result(hostSocket);
+    hostSocket.emit('queue:addMany', { playlistId: p.id });
+    expect(await ok).toMatchObject({ added: 1 });
+
+    for (const bad of [
+      {},
+      { playlistId: p.id, videoIds: [vid(1)] },
+      { videoIds: [] },
+      { playlistId: 'nope' },
+    ]) {
+      const err = next(hostSocket, 'error');
+      hostSocket.emit('queue:addMany', bad as never);
+      expect((await err).code).toBe('invalid_payload');
+    }
+  });
+
+  it('needs a room', async () => {
+    const g = await h.guest();
+    const socket = await g.socket();
+    const err = next(socket, 'error');
+    socket.emit('queue:addMany', { videoIds: [vid(1)] });
+    expect((await err).code).toBe('not_in_room');
   });
 });

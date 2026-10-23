@@ -1,12 +1,15 @@
 import express, { type ErrorRequestHandler } from 'express';
 import type { HealthResponse } from '@spotibay/shared';
 import { attachUser, banGuard } from './middleware/session.js';
+import { createLibraryRouter } from './routes/library.js';
 import { createRoomsRouter } from './routes/rooms.js';
 import { createSearchRouter } from './routes/search.js';
 import { createSessionRouter } from './routes/session.js';
 import type { BanStore } from './services/bans.js';
 import type { IdentityService } from './services/identity.js';
+import type { LibraryService } from './services/library.js';
 import type { PlaybackService } from './services/playback.js';
+import type { PlaylistService } from './services/playlists.js';
 import type { Presence } from './services/presence.js';
 import type { RoomService } from './services/rooms.js';
 import type { SearchService } from './services/search.js';
@@ -29,6 +32,9 @@ export interface AppDeps {
   playback?: Pick<PlaybackService, 'history'>;
   /** Search route is mounted when this is provided (requires `identity`). */
   search?: SearchService;
+  /** Playlist, likes and listening-history routes are mounted when both are provided. */
+  playlists?: PlaylistService;
+  library?: LibraryService;
   secureCookie?: boolean;
 }
 
@@ -63,6 +69,8 @@ export function createApp({
   presence,
   playback,
   search,
+  playlists,
+  library,
   secureCookie = true,
 }: AppDeps = {}) {
   const app = express();
@@ -90,6 +98,9 @@ export function createApp({
     );
     if (rooms) app.use('/api', createRoomsRouter({ rooms, presence, playback }));
     if (search) app.use('/api', createSearchRouter({ search }));
+    if (playlists && library) {
+      app.use('/api', createLibraryRouter({ playlists, library, rooms, presence, playback }));
+    }
   }
 
   app.use(errorHandler);

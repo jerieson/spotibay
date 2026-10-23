@@ -289,13 +289,13 @@ _(Fair mode refinement: the user whose track is playing goes to the back of the 
 
 ### Phase 7 — Playlists, likes, history
 
-- [ ] REST CRUD: playlists, playlist items (add, remove, reorder), `is_public` toggle, share by `share_slug`
-- [ ] Import from YouTube playlist URL via `playlistItems.list` (50 per page) + `videos.list`, capped at `limits.maxPlaylistImportItems`, behind `features.playlistImport`; skip non-embeddable videos and report how many were skipped
-- [ ] "Save room history as playlist"
-- [ ] "Queue playlist" into a room (`queue:addMany`, respects queue limits; host/DJ can bypass per-user limit)
-- [ ] Likes (heart on now-playing and search results) and a Liked Songs view
-- [ ] Personal listening history page
-- [ ] Web: Library page (playlists, liked songs, history), playlist detail with drag reorder, shared playlist page (read-only, "Copy to my library")
+- [x] REST CRUD: playlists, playlist items (add, remove, reorder), `is_public` toggle, share by `share_slug`
+- [x] Import from YouTube playlist URL via `playlistItems.list` (50 per page) + `videos.list`, capped at `limits.maxPlaylistImportItems`, behind `features.playlistImport`; skip non-embeddable videos and report how many were skipped
+- [x] "Save room history as playlist"
+- [x] "Queue playlist" into a room (`queue:addMany`, respects queue limits; host/DJ can bypass per-user limit)
+- [x] Likes (heart on now-playing and search results) and a Liked Songs view
+- [x] Personal listening history page
+- [x] Web: Library page (playlists, liked songs, history), playlist detail with drag reorder, shared playlist page (read-only, "Copy to my library")
 
 **Done when:** a user can build a playlist from search, import one from YouTube, share it, and queue it into a room.
 

@@ -60,6 +60,17 @@ export function useRoomConnection(code: string) {
       useRoomStore.getState().setQueue(queue);
     const onSkipVotes: ServerToClientEvents['playback:skipVotes'] = (votes) =>
       useRoomStore.getState().setSkipVotes(votes);
+    const onAddMany: ServerToClientEvents['queue:addManyResult'] = (r) => {
+      const left = [
+        r.duplicates > 0 && `${r.duplicates} already queued`,
+        r.unplayable > 0 && `${r.unplayable} can't be played`,
+        r.overLimit > 0 && `${r.overLimit} over the queue limit`,
+      ].filter(Boolean);
+      const base = `Queued ${r.added} ${r.added === 1 ? 'track' : 'tracks'}`;
+      if (left.length === 0) toast(base);
+      else if (r.added === 0) toast.error(`Nothing queued: ${left.join(', ')}`);
+      else toast(`${base} (${left.join(', ')})`);
+    };
     const onClosed = () => useRoomStore.getState().setStatus('closed');
     const onError: ServerToClientEvents['error'] = (err) => toast.error(err.message);
 
@@ -71,6 +82,7 @@ export function useRoomConnection(code: string) {
     socket.on('playback:state', onPlayback);
     socket.on('queue:updated', onQueue);
     socket.on('playback:skipVotes', onSkipVotes);
+    socket.on('queue:addManyResult', onAddMany);
     socket.on('room:closed', onClosed);
     socket.on('error', onError);
     socket.connect();
@@ -84,6 +96,7 @@ export function useRoomConnection(code: string) {
       socket.off('playback:state', onPlayback);
       socket.off('queue:updated', onQueue);
       socket.off('playback:skipVotes', onSkipVotes);
+      socket.off('queue:addManyResult', onAddMany);
       socket.off('room:closed', onClosed);
       socket.off('error', onError);
       timeSync.stop();

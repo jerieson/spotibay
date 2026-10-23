@@ -1,6 +1,7 @@
 import { Pause, Play, RefreshCw, SkipForward, ThumbsDown, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { expectedPositionMs } from '@spotibay/shared';
+import { LikeButton } from '@/components/library/like-button';
 import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
 import { usePlaybackSync } from '@/hooks/use-playback-sync';
@@ -126,6 +127,7 @@ export function PlayerPanel() {
           ) : (
             <p className="flex-1 text-sm text-muted-foreground">The room is quiet.</p>
           )}
+          {item && <LikeButton track={item.track} />}
           {canControl && (
             <div className="flex shrink-0 gap-1">
               <Button

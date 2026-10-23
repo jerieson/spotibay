@@ -3,6 +3,7 @@ import { expectedPositionMs, type PlaybackState } from '@spotibay/shared';
 import {
   createYouTubeService,
   parseIsoDuration,
+  parsePlaylistId,
   parseVideoId,
   quotaDate,
   YouTubeError,
@@ -176,5 +177,82 @@ describe('YouTube service', () => {
       code: 'api_error',
     });
     expect(failing.quota).toHaveLength(1);
+  });
+});
+
+describe('parsePlaylistId', () => {
+  const id = 'PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf';
+  it.each([
+    [`https://www.youtube.com/playlist?list=${id}`],
+    [`https://music.youtube.com/playlist?list=${id}&si=x`],
+    [`https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=${id}`],
+    [`youtube.com/playlist?list=${id}`],
+  ])('extracts the id from %s', (input) => {
+    expect(parsePlaylistId(input)).toBe(id);
+  });
+
+  it.each([
+    [''],
+    ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
+    ['https://example.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf'],
+    ['https://www.youtube.com/playlist?list=x'],
+    ['not a link'],
+  ])('rejects %j', (input) => {
+    expect(parsePlaylistId(input)).toBeNull();
+  });
+});
+
+describe('getPlaylistVideoIds', () => {
+  function setup(status = 200) {
+    const calls: URL[] = [];
+    const quota: Array<[string, number, number]> = [];
+    const all = Array.from({ length: 120 }, (_, i) => `video${String(i).padStart(6, '0')}`);
+    const fetchFake = (async (input: URL) => {
+      calls.push(input);
+      if (status !== 200) return new Response('{}', { status });
+      const start = Number(input.searchParams.get('pageToken') ?? 0);
+      const items = all
+        .slice(start, start + 50)
+        .map((videoId) => ({ contentDetails: { videoId } }));
+      const nextPageToken = start + 50 < all.length ? String(start + 50) : undefined;
+      return new Response(JSON.stringify({ items, nextPageToken }), { status: 200 });
+    }) as typeof fetch;
+    const service = createYouTubeService({
+      apiKey: 'k',
+      tracks: {
+        findMany: async () => [],
+        upsertMany: async () => undefined,
+        markUnembeddable: async () => undefined,
+      },
+      quota: {
+        add: async (d, u, s) => void quota.push([d, u, s]),
+        get: async () => ({ units: 0, searchCalls: 0 }),
+      },
+      fetch: fetchFake,
+    });
+    return { service, calls, quota, all };
+  }
+
+  it('pages 50 at a time and records each call', async () => {
+    const { service, calls, quota, all } = setup();
+    expect(await service.getPlaylistVideoIds('PLxxxxxxxxxx', 500)).toEqual(all);
+    expect(calls).toHaveLength(3);
+    expect(calls[1]?.searchParams.get('pageToken')).toBe('50');
+    expect(quota.map((q) => q[1])).toEqual([1, 1, 1]);
+  });
+
+  it('stops at the cap without fetching further pages', async () => {
+    const { service, calls, all } = setup();
+    expect(await service.getPlaylistVideoIds('PLxxxxxxxxxx', 60)).toEqual(all.slice(0, 60));
+    expect(calls).toHaveLength(2);
+  });
+
+  it('reports missing and private playlists as not found', async () => {
+    await expect(setup(404).service.getPlaylistVideoIds('PLxxxxxxxxxx', 10)).rejects.toMatchObject({
+      code: 'not_found',
+    });
+    await expect(setup(500).service.getPlaylistVideoIds('PLxxxxxxxxxx', 10)).rejects.toMatchObject({
+      code: 'api_error',
+    });
   });
 });

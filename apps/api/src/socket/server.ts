@@ -15,6 +15,7 @@ import { readCookie } from '../middleware/session.js';
 import type { BanStore } from '../services/bans.js';
 import type { IdentityService, UserRecord } from '../services/identity.js';
 import { PlaybackError, type PlaybackService } from '../services/playback.js';
+import { PlaylistError, type PlaylistService } from '../services/playlists.js';
 import type { Presence } from '../services/presence.js';
 import type { RoomLifecycle } from '../services/room-lifecycle.js';
 import { RoomError, toRoom, type RoomRow, type RoomService } from '../services/rooms.js';
@@ -43,6 +44,7 @@ export interface SocketServerDeps {
   presence: Presence;
   lifecycle: RoomLifecycle;
   playback: PlaybackService;
+  playlists: Pick<PlaylistService, 'videoIdsForQueue'>;
   maxUsersPerRoom: () => number;
   syncConfig: () => SyncConfig;
   onError?: (err: unknown) => void;
@@ -66,6 +68,7 @@ export function createSocketServer(deps: SocketServerDeps) {
     presence,
     lifecycle,
     playback,
+    playlists,
     onError = (e) => console.error(e),
   } = deps;
   const io = new Server<
@@ -113,6 +116,10 @@ export function createSocketServer(deps: SocketServerDeps) {
     socket.data.queue = socket.data.queue.then(fn).catch((err: unknown) => {
       if (err instanceof RoomError) {
         fail(socket, socketCodeFor(err), err.message);
+        return;
+      }
+      if (err instanceof PlaylistError) {
+        fail(socket, err.code === 'playlist_not_found' ? err.code : 'invalid_payload', err.message);
         return;
       }
       if (err instanceof PlaybackError) {
@@ -342,6 +349,22 @@ export function createSocketServer(deps: SocketServerDeps) {
         const current = await currentRoom(socket);
         if (!current) return fail(socket, 'not_in_room', 'Join a room first');
         await playback.add(current.row.id, socket.data.user.id, payload.url);
+      });
+    });
+
+    socket.on('queue:addMany', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'queue:addMany', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        const userId = socket.data.user.id;
+        const videoIds =
+          payload.playlistId !== undefined
+            ? await playlists.videoIdsForQueue(userId, payload.playlistId)
+            : (payload.videoIds ?? []);
+        const result = await playback.addMany(current.row.id, userId, current.role, videoIds);
+        socket.emit('queue:addManyResult', result);
       });
     });
 

@@ -29,6 +29,8 @@ import { createYouTubeService } from '../../src/services/youtube.js';
 import { createPresence } from '../../src/services/presence.js';
 import { createRoomLifecycle } from '../../src/services/room-lifecycle.js';
 import { createRoomService } from '../../src/services/rooms.js';
+import { createLibraryService } from '../../src/services/library.js';
+import { createPlaylistService } from '../../src/services/playlists.js';
 import { createSearchService } from '../../src/services/search.js';
 import { createSettingsService } from '../../src/services/settings.js';
 import { createBanStore, createRoomStore, createUserStore } from '../../src/services/user-store.js';
@@ -114,8 +116,20 @@ export async function createHarness(options: HarnessOptions = {}) {
   /** Canned `search.list` answers: query -> video ids. `searchCalls` records the queries asked. */
   const searchResults = new Map<string, string[]>();
   const searchCalls: string[] = [];
+  /** Canned `playlistItems.list` data: playlist id -> video ids; an absent id answers 404. */
+  const playlistPages = new Map<string, string[]>();
   const fakeFetch = (async (input: URL | string) => {
     const url = new URL(input);
+    if (url.pathname.endsWith('/playlistItems')) {
+      const all = playlistPages.get(url.searchParams.get('playlistId') ?? '');
+      if (!all) return new Response('{}', { status: 404 });
+      // Two items per page so tests exercise paging.
+      const start = Number(url.searchParams.get('pageToken') ?? 0);
+      const page = all.slice(start, start + 2);
+      const nextPageToken = start + 2 < all.length ? String(start + 2) : undefined;
+      const items = page.map((videoId) => ({ contentDetails: { videoId } }));
+      return new Response(JSON.stringify({ items, nextPageToken }), { status: 200 });
+    }
     if (url.pathname.endsWith('/search')) {
       const q = url.searchParams.get('q') ?? '';
       searchCalls.push(q);
@@ -159,13 +173,25 @@ export async function createHarness(options: HarnessOptions = {}) {
     rooms,
     settings,
   });
+  const playlists = createPlaylistService({ db, youtube, settings });
+  const library = createLibraryService({ db });
   const lifecycle = createRoomLifecycle({
     rooms,
     presence,
     hostGraceMs: options.hostGraceMs,
     emptyTtlMs: options.emptyTtlMs,
   });
-  const app = createApp({ identity, bans, rooms, presence, playback, search, secureCookie: false });
+  const app = createApp({
+    identity,
+    bans,
+    rooms,
+    presence,
+    playback,
+    search,
+    playlists,
+    library,
+    secureCookie: false,
+  });
   const httpServer: Server = createServer(app);
   const io = createSocketServer({
     httpServer,
@@ -175,6 +201,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     presence,
     lifecycle,
     playback,
+    playlists,
     maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
     syncConfig: () => ({
       driftThresholdMs: settings.get('sync.driftThresholdMs'),
@@ -239,7 +266,9 @@ export async function createHarness(options: HarnessOptions = {}) {
     rooms,
     presence,
     playback,
+    playlists,
     videos,
+    playlistPages,
     youtubeCalls,
     searchResults,
     searchCalls,

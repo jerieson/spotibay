@@ -2,7 +2,10 @@ import { useMutation } from '@tanstack/react-query';
 import { Check, Plus, Search } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Track } from '@spotibay/shared';
+import { AddToPlaylistDialog } from '@/components/library/add-to-playlist-dialog';
+import { LikeButton } from '@/components/library/like-button';
 import { AddLinkForm } from '@/components/room/add-link-form';
+import { LibraryQueue } from '@/components/room/library-queue';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -56,7 +59,9 @@ export function AddMusicSheet() {
       <SheetContent side="right" className="w-full gap-4 overflow-y-auto sm:max-w-md">
         <SheetHeader>
           <SheetTitle>Add music</SheetTitle>
-          <SheetDescription>Search YouTube or paste a link.</SheetDescription>
+          <SheetDescription>
+            Search YouTube, paste a link, or queue from your library.
+          </SheetDescription>
         </SheetHeader>
         <div className="space-y-4 px-4 pb-4">
           <AddLinkForm onAdded={() => setOpen(false)} />
@@ -106,6 +111,8 @@ export function AddMusicSheet() {
                       {track.channelTitle} · {formatDuration(track.durationSec * 1000)}
                     </p>
                   </div>
+                  <LikeButton track={track} />
+                  <AddToPlaylistDialog track={track} />
                   <Button
                     size="sm"
                     variant="secondary"
@@ -120,6 +127,10 @@ export function AddMusicSheet() {
               ))}
             </ul>
           )}
+          <section className="space-y-2" aria-label="From your library">
+            <h3 className="text-sm font-semibold">From your library</h3>
+            <LibraryQueue onQueued={() => setOpen(false)} />
+          </section>
         </div>
       </SheetContent>
     </Sheet>

@@ -9,6 +9,11 @@ const SEARCH_ENDPOINT = 'https://www.googleapis.com/youtube/v3/search';
 /** `search.list` costs 100 quota units per call. */
 const SEARCH_LIST_COST = 100;
 const SEARCH_MAX_RESULTS = 15;
+const PLAYLIST_ITEMS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/playlistItems';
+/** `playlistItems.list` returns at most 50 items per page and costs 1 quota unit per call. */
+const PLAYLIST_PAGE_SIZE = 50;
+const PLAYLIST_ITEMS_COST = 1;
+const PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,64}$/;
 /** Stored track details are reused for this long before asking YouTube again. */
 const TRACK_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -30,7 +35,7 @@ export interface QuotaStore {
   get(date: string): Promise<{ units: number; searchCalls: number }>;
 }
 
-export type YouTubeErrorCode = 'not_configured' | 'api_error';
+export type YouTubeErrorCode = 'not_configured' | 'api_error' | 'not_found';
 
 export class YouTubeError extends Error {
   constructor(
@@ -67,6 +72,21 @@ export function parseVideoId(input: string): string | null {
   return candidate && VIDEO_ID_PATTERN.test(candidate) ? candidate : null;
 }
 
+/** Extracts the playlist id from a YouTube link that has a `list` parameter; `null` if there is none. */
+export function parsePlaylistId(input: string): string | null {
+  const text = input.trim();
+  let url: URL;
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  if (!HOSTS.has(url.hostname.toLowerCase())) return null;
+  const id = url.searchParams.get('list');
+  return id && PLAYLIST_ID_PATTERN.test(id) ? id : null;
+}
+
 /** ISO 8601 duration as returned by YouTube (`PT1H2M3S`, `P1DT2H`, `P0D` for live) to whole seconds. */
 export function parseIsoDuration(value: string): number | null {
   const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value);
@@ -100,6 +120,11 @@ const videosResponseSchema = z.object({
       }),
     )
     .default([]),
+});
+
+const playlistItemsResponseSchema = z.object({
+  items: z.array(z.object({ contentDetails: z.object({ videoId: z.string() }) })).default([]),
+  nextPageToken: z.string().optional(),
 });
 
 const searchResponseSchema = z.object({
@@ -189,7 +214,38 @@ export function createYouTubeService({
     });
   }
 
-  return { getVideos, search, markUnembeddable: tracks.markUnembeddable };
+  /** Video ids of a public YouTube playlist in order, at most `max` of them (one call per 50). */
+  async function getPlaylistVideoIds(playlistId: string, max: number): Promise<string[]> {
+    if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
+    const ids: string[] = [];
+    let pageToken: string | undefined;
+    while (ids.length < max) {
+      const url = new URL(PLAYLIST_ITEMS_ENDPOINT);
+      url.searchParams.set('part', 'contentDetails');
+      url.searchParams.set('playlistId', playlistId);
+      url.searchParams.set('maxResults', String(PLAYLIST_PAGE_SIZE));
+      url.searchParams.set('key', apiKey);
+      if (pageToken) url.searchParams.set('pageToken', pageToken);
+      const res = await fetchImpl(url);
+      await quota.add(quotaDate(now()), PLAYLIST_ITEMS_COST, 0);
+      if (res.status === 404 || res.status === 403) {
+        // Missing and private playlists look the same to us.
+        throw new YouTubeError('not_found', 'That playlist was not found or is private');
+      }
+      if (!res.ok) throw new YouTubeError('api_error', `YouTube API returned ${res.status}`);
+      const parsed = playlistItemsResponseSchema.safeParse(await res.json());
+      if (!parsed.success) throw new YouTubeError('api_error', 'Unexpected YouTube API response');
+      for (const item of parsed.data.items) {
+        if (VIDEO_ID_PATTERN.test(item.contentDetails.videoId))
+          ids.push(item.contentDetails.videoId);
+      }
+      pageToken = parsed.data.nextPageToken;
+      if (!pageToken) break;
+    }
+    return ids.slice(0, max);
+  }
+
+  return { getVideos, search, getPlaylistVideoIds, markUnembeddable: tracks.markUnembeddable };
 }
 
 export type YouTubeService = ReturnType<typeof createYouTubeService>;

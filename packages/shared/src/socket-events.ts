@@ -6,6 +6,7 @@ import {
   type SkipVotes,
   voteValueSchema,
 } from './playback.js';
+import { MAX_BATCH_VIDEOS, videoIdSchema, type AddManyResult } from './playlists.js';
 import {
   assignableRoleSchema,
   roomCodeSchema,
@@ -32,6 +33,7 @@ export const socketErrorCodes = [
   'track_rejected',
   'queue_limit',
   'duplicate_track',
+  'playlist_not_found',
   'youtube_unavailable',
   'internal_error',
 ] as const;
@@ -57,6 +59,15 @@ export const clientEventSchemas = {
   'playback:voteSkip': z.undefined(),
   'playback:reportUnavailable': z.object({ queueItemId: z.string().min(1) }),
   'queue:add': z.object({ url: z.string().trim().min(1).max(MAX_QUEUE_URL_LENGTH) }),
+  /** Exactly one source: a playlist (own, or public) or a list of video ids (liked songs, history). */
+  'queue:addMany': z
+    .object({
+      playlistId: z.uuid().optional(),
+      videoIds: z.array(videoIdSchema).min(1).max(MAX_BATCH_VIDEOS).optional(),
+    })
+    .refine((p) => (p.playlistId === undefined) !== (p.videoIds === undefined), {
+      message: 'Send either playlistId or videoIds',
+    }),
   'queue:remove': z.object({ queueItemId: z.string().min(1) }),
   'queue:reorder': z.object({
     queueItemId: z.string().min(1),
@@ -92,6 +103,7 @@ export interface ClientToServerEvents {
     payload: ClientEventPayloads['playback:reportUnavailable'],
   ) => void;
   'queue:add': (payload: ClientEventPayloads['queue:add']) => void;
+  'queue:addMany': (payload: ClientEventPayloads['queue:addMany']) => void;
   'queue:remove': (payload: ClientEventPayloads['queue:remove']) => void;
   'queue:reorder': (payload: ClientEventPayloads['queue:reorder']) => void;
   'queue:vote': (payload: ClientEventPayloads['queue:vote']) => void;
@@ -106,5 +118,6 @@ export interface ServerToClientEvents {
   'playback:state': (state: PlaybackState) => void;
   'playback:skipVotes': (votes: SkipVotes) => void;
   'queue:updated': (payload: { queue: QueueItem[] }) => void;
+  'queue:addManyResult': (result: AddManyResult) => void;
   error: (error: SocketError) => void;
 }
