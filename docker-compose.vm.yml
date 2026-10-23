@@ -15,7 +15,7 @@ services:
     mem_limit: 96m
     logging: *logging
     ports:
-      - '127.0.0.1:${HTTP_PORT:-8083}:80'
+      - '${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8083}:80'
     environment:
       SITE_ADDRESS: ':80'
     volumes:

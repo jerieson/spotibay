@@ -1,6 +1,8 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
 import type { HealthResponse, SiteResponse } from '@spotibay/shared';
+import { logger } from './logger.js';
+import { rateLimit } from './middleware/rate-limit.js';
 import { attachUser, banGuard } from './middleware/session.js';
 import { attachAdmin, createAdminRouter } from './routes/admin.js';
 import { createLibraryRouter } from './routes/library.js';
@@ -49,6 +51,8 @@ export interface AppDeps {
   library?: LibraryService;
   /** Admin routes, `/api/site` and the maintenance gate are mounted when this is provided. */
   admin?: AdminDeps;
+  /** Per-address REST limits, read live from settings; enabled when provided. */
+  limits?: { redis: Redis; settings: Pick<SettingsService, 'get'> };
   secureCookie?: boolean;
 }
 
@@ -70,7 +74,7 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     res.status(400).json({ error: 'invalid_request', message: 'Malformed JSON' });
     return;
   }
-  console.error(err);
+  logger.error({ err }, 'unhandled request error');
   res.status(500).json({ error: 'internal_error' });
 };
 
@@ -86,12 +90,30 @@ export function createApp({
   playlists,
   library,
   admin,
+  limits,
   secureCookie = true,
 }: AppDeps = {}) {
   const app = express();
   // Caddy is the single trusted proxy in front of the api.
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+
+  app.use('/api', (req, res, next) => {
+    const start = process.hrtime.bigint();
+    res.on('finish', () => {
+      if (req.path === '/health') return;
+      logger.info(
+        {
+          method: req.method,
+          path: req.path,
+          status: res.statusCode,
+          ms: Number((process.hrtime.bigint() - start) / 1_000_000n),
+        },
+        'request',
+      );
+    });
+    next();
+  });
 
   app.get('/api/health', async (_req, res) => {
     const body: HealthResponse = { status: 'ok' };
@@ -103,6 +125,29 @@ export function createApp({
     }
     res.status(body.status === 'ok' ? 200 : 503).json(body);
   });
+
+  if (limits) {
+    const { redis, settings } = limits;
+    app.use(
+      '/api',
+      rateLimit({
+        redis,
+        name: 'rest',
+        limit: () => settings.get('limits.requestsPerMinute'),
+        windowSec: 60,
+      }),
+    );
+    // Creating accounts, rooms and imports is the costly part; cap it harder than plain reads.
+    app.post(
+      ['/api/session', '/api/session/recover', '/api/rooms', '/api/playlists/import'],
+      rateLimit({
+        redis,
+        name: 'expensive',
+        limit: () => settings.get('limits.expensiveRequestsPerMinute'),
+        windowSec: 60,
+      }),
+    );
+  }
 
   if ((identity && bans) || admin) app.use('/api', express.json({ limit: '16kb' }));
 

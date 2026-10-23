@@ -1,6 +1,7 @@
 import { EMPTY_ROOM_TTL_MS, HOST_GRACE_MS } from '@spotibay/shared';
 import type { Presence } from './presence.js';
 import type { RoomService } from './rooms.js';
+import { logger } from '../logger.js';
 
 export interface RoomLifecycleOptions {
   rooms: RoomService;
@@ -19,7 +20,7 @@ export function createRoomLifecycle({
   presence,
   hostGraceMs = HOST_GRACE_MS,
   emptyTtlMs = EMPTY_ROOM_TTL_MS,
-  onError = (err) => console.error(err),
+  onError = (err) => logger.error({ err }, 'room service error'),
 }: RoomLifecycleOptions) {
   const hostTimers = new Map<string, NodeJS.Timeout>();
   const emptyTimers = new Map<string, NodeJS.Timeout>();

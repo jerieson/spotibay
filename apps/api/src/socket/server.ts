@@ -1,4 +1,5 @@
 import type { Server as HttpServer, IncomingMessage } from 'node:http';
+import type { Redis } from 'ioredis';
 import { Server, type Socket } from 'socket.io';
 import {
   ADMIN_COOKIE,
@@ -26,6 +27,8 @@ import type { Presence } from '../services/presence.js';
 import type { RoomLifecycle } from '../services/room-lifecycle.js';
 import { RoomError, toRoom, type RoomRow, type RoomService } from '../services/rooms.js';
 import type { SettingsService } from '../services/settings.js';
+import { hit } from '../lib/rate-limit.js';
+import { logger } from '../logger.js';
 
 interface SocketData {
   user: UserRecord;
@@ -58,9 +61,14 @@ export interface SocketServerDeps {
   /** Admin features: maintenance gate, kicks and bans, live settings, the `/admin` namespace. */
   admin?: { auth: AdminAuth; service: AdminService; settings: SettingsService };
   maxUsersPerRoom: () => number;
+  /** Per-user cap on inbound events per second; the limiter is off when omitted. */
+  eventLimit?: { redis: Redis; perSecond: () => number };
   syncConfig: () => SyncConfig;
   onError?: (err: unknown) => void;
 }
+
+/** Fixed window for the per-user event cap; a few seconds smooths out bursts. */
+const SOCKET_LIMIT_WINDOW_SEC = 5;
 
 const roomChannel = (roomId: string) => `room:${roomId}`;
 
@@ -82,7 +90,7 @@ export function createSocketServer(deps: SocketServerDeps) {
     playback,
     chat,
     playlists,
-    onError = (e) => console.error(e),
+    onError = (err) => logger.error({ err }, 'socket error'),
   } = deps;
   const io = new Server<
     ClientToServerEvents,
@@ -287,6 +295,26 @@ export function createSocketServer(deps: SocketServerDeps) {
   }
 
   io.on('connection', (socket) => {
+    const { eventLimit } = deps;
+    if (eventLimit) {
+      socket.use((_packet, next) => {
+        hit(
+          eventLimit.redis,
+          `ratelimit:socket:${socket.data.user.id}`,
+          eventLimit.perSecond() * SOCKET_LIMIT_WINDOW_SEC,
+          SOCKET_LIMIT_WINDOW_SEC,
+        )
+          .then((allowed) => {
+            if (allowed) next();
+            else fail(socket, 'rate_limited', 'Too many requests, slow down');
+          })
+          .catch((err) => {
+            onError(err);
+            next();
+          });
+      });
+    }
+
     const announcement = deps.admin?.settings.get('site.announcement');
     if (announcement) socket.emit('site:announcement', { announcement });
 

@@ -10,6 +10,7 @@ const envSchema = z.object({
   /** Unset keeps the admin panel switched off. From: pnpm --filter api hash-password <password> */
   ADMIN_PASSWORD_HASH: z.string().min(1).optional(),
   YOUTUBE_API_KEY: z.string().optional(),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
 });
 

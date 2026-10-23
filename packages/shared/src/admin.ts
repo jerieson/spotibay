@@ -28,6 +28,10 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'limits.maxPlaylistImportItems': 'Most tracks imported from one YouTube playlist.',
   'limits.chatMessageMaxLength': 'Longest chat message, in characters.',
   'limits.chatMessagesPerMinute': 'Chat messages one person can send per minute.',
+  'limits.requestsPerMinute': 'API requests one address can make per minute.',
+  'limits.expensiveRequestsPerMinute':
+    'Account, room and playlist-import requests one address can make per minute.',
+  'limits.socketEventsPerSecond': 'Realtime events one person can send per second.',
   'queue.skipVoteThreshold': 'Fraction of the room that must vote to skip a track.',
   'sync.driftThresholdMs': 'How far a player may drift before it seeks, in milliseconds.',
   'sync.checkIntervalMs': 'How often players check for drift, in milliseconds.',

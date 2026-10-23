@@ -92,6 +92,8 @@ const isoDuration = (sec: number) =>
 export interface HarnessOptions {
   hostGraceMs?: number;
   emptyTtlMs?: number;
+  /** Turns on the per-address REST and per-user socket limits (off by default: tests share one IP). */
+  rateLimits?: boolean;
 }
 
 export async function createHarness(options: HarnessOptions = {}) {
@@ -222,6 +224,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     search,
     playlists,
     library,
+    limits: options.rateLimits ? { redis, settings } : undefined,
     secureCookie: false,
   });
   const httpServer: Server = createServer(app);
@@ -237,6 +240,9 @@ export async function createHarness(options: HarnessOptions = {}) {
     chat,
     playlists,
     maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
+    eventLimit: options.rateLimits
+      ? { redis, perSecond: () => settings.get('limits.socketEventsPerSecond') }
+      : undefined,
     syncConfig: () => ({
       driftThresholdMs: settings.get('sync.driftThresholdMs'),
       checkIntervalMs: settings.get('sync.checkIntervalMs'),

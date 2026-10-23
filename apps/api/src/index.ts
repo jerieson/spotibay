@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { db, pool } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { env } from './env.js';
+import { logger } from './logger.js';
 import { connectRedis, redis } from './redis.js';
 import { createAdminAuth } from './services/admin-auth.js';
 import { createAdminService } from './services/admin.js';
@@ -72,7 +73,7 @@ const adminAuth = createAdminAuth({
   passwordHash: env.ADMIN_PASSWORD_HASH,
 });
 await adminAuth.sync();
-if (!adminAuth.enabled) console.warn('ADMIN_PASSWORD_HASH is not set; the admin panel is disabled');
+if (!adminAuth.enabled) logger.warn('ADMIN_PASSWORD_HASH is not set; the admin panel is disabled');
 const adminService = createAdminService({
   store: createAdminDataStore(db),
   audit: createAuditService(createAuditStore(db)),
@@ -97,12 +98,13 @@ const app = createApp({
   playlists,
   library,
   admin: { auth: adminAuth, service: adminService, redis, settings },
+  limits: { redis, settings },
   wordFilter: () => settings.get('moderation.wordFilter'),
   secureCookie: env.NODE_ENV === 'production',
 });
 
 const httpServer = createServer(app);
-createSocketServer({
+const io = createSocketServer({
   httpServer,
   identity,
   bans,
@@ -114,6 +116,7 @@ createSocketServer({
   playlists,
   admin: { auth: adminAuth, service: adminService, settings },
   maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
+  eventLimit: { redis, perSecond: () => settings.get('limits.socketEventsPerSecond') },
   syncConfig: () => ({
     driftThresholdMs: settings.get('sync.driftThresholdMs'),
     checkIntervalMs: settings.get('sync.checkIntervalMs'),
@@ -123,5 +126,34 @@ await lifecycle.start();
 await playback.start();
 
 httpServer.listen(env.PORT, () => {
-  console.log(`api listening on :${env.PORT}`);
+  logger.info({ port: env.PORT }, 'api listening');
 });
+
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+let shuttingDown = false;
+
+/** Playback state lives in Redis on every change, so stopping the timers is enough: `playback.start()` re-arms them on boot. */
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, 'shutting down');
+  const force = setTimeout(() => {
+    logger.error('shutdown timed out');
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  force.unref();
+  try {
+    playback.stop();
+    lifecycle.stop();
+    // Closes the http server too, so no new connections arrive while sockets drain.
+    await io.close();
+    await Promise.all([pool.end(), redis.quit()]);
+    process.exit(0);
+  } catch (err) {
+    logger.error({ err }, 'shutdown failed');
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));

@@ -21,6 +21,7 @@ import type { PlaybackStore } from './playback-store.js';
 import type { ActiveQueueItem, FinalStatus, QueueStore } from './queue-store.js';
 import { parseVideoId, YouTubeError, type YouTubeService } from './youtube.js';
 import type { RoomService } from './rooms.js';
+import { logger } from '../logger.js';
 
 export type PlaybackErrorCode =
   | 'invalid_video'
@@ -99,7 +100,7 @@ export function createPlaybackService({
   rooms,
   settings,
   now = Date.now,
-  onError = (err) => console.error(err),
+  onError = (err) => logger.error({ err }, 'room service error'),
 }: PlaybackServiceDeps) {
   const withLock = createKeyedLock();
   const timers = new Map<string, NodeJS.Timeout>();

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { searchQuerySchema, type SearchErrorCode, type SearchQuery } from '@spotibay/shared';
 import { validateQuery } from '../lib/validate.js';
+import { logger } from '../logger.js';
 import { requireUser } from '../middleware/session.js';
 import { SearchError, type SearchService } from '../services/search.js';
 import { YouTubeError } from '../services/youtube.js';
@@ -25,7 +26,7 @@ export function createSearchRouter({ search }: { search: SearchService }) {
         return;
       }
       if (err instanceof YouTubeError) {
-        console.error(err);
+        logger.error({ err }, 'youtube search failed');
         res
           .status(statusByCode.search_unavailable)
           .json({ error: 'search_unavailable', message: 'Search is unavailable right now' });

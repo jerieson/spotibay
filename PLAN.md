@@ -336,11 +336,11 @@ _(Fair mode refinement: the user whose track is playing goes to the back of the 
 
 ### Phase 10 — Hardening and deploy
 
-- [ ] Rate limits (Redis-backed) on all REST routes and socket events, configurable caps for the expensive ones
-- [ ] Helmet / Caddy headers with a CSP that allows `https://www.youtube.com` scripts and frames, `https://i.ytimg.com` images
-- [ ] Structured logging (`pino`)
+- [x] Rate limits (Redis-backed) on all REST routes and socket events, configurable caps for the expensive ones
+- [x] Caddy headers (no helmet: the api only serves JSON) with a CSP that allows `https://www.youtube.com` scripts and frames, `https://i.ytimg.com` images
+- [x] Structured logging (`pino`)
 - [x] Log rotation via Docker `json-file` options (`max-size: 10m`, `max-file: 3`) in `docker-compose.vm.yml`
-- [ ] Graceful shutdown: stop accepting sockets, persist playback state, close db/redis
+- [x] Graceful shutdown: stop accepting sockets, persist playback state, close db/redis
 - [x] Backups: a `backup` service (or host cron) running `pg_dump` nightly, keeping 7 days, plus restore instructions in `README.md`
 - [ ] CI (GitHub Actions): lint, typecheck, test, build images, push to GHCR
 - [x] `README.md` deploy steps for the VM (adapted: Cloudflare tunnel, `docker-compose.vm.yml`):
