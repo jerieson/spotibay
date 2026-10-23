@@ -92,7 +92,7 @@ export function CreateRoomDialog() {
                   )}
                 >
                   <span className="block font-medium capitalize">{v}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-sm text-muted-foreground">
                     {v === 'public' ? 'Listed on the home page' : 'Only people with the code'}
                   </span>
                 </button>

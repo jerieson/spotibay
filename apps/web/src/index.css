@@ -1,3 +1,4 @@
+@import '@fontsource-variable/inter';
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -7,8 +8,8 @@
 :root {
   --volt: #ceff00;
   --ink: oklch(0.12 0 0);
-  --background: oklch(0.99 0 0);
-  --foreground: oklch(0.15 0 0);
+  --background: oklch(0.965 0.012 120);
+  --foreground: oklch(0.14 0.01 120);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.15 0 0);
   --popover: oklch(1 0 0);
@@ -16,16 +17,17 @@
   /* Volt on white fails contrast, so light mode uses near-black with a volt ring. */
   --primary: oklch(0.18 0 0);
   --primary-foreground: #ceff00;
-  --secondary: oklch(0.96 0 0);
+  --secondary: oklch(0.93 0.015 120);
   --secondary-foreground: oklch(0.2 0 0);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.96 0 0);
+  --muted: oklch(0.93 0.015 120);
+  --muted-foreground: oklch(0.4 0.01 120);
+  --accent: oklch(0.92 0.03 120);
   --accent-foreground: oklch(0.2 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.9 0 0);
-  --input: oklch(0.9 0 0);
-  --ring: #ceff00;
+  --border: oklch(0.82 0.015 120);
+  --input: oklch(0.78 0.015 120);
+  --ring: oklch(0.45 0.13 125);
+  --volt-text: oklch(0.4 0.12 125);
   --radius: 0.625rem;
 }
 
@@ -41,7 +43,8 @@
   --secondary: oklch(0.22 0 0);
   --secondary-foreground: oklch(0.97 0 0);
   --muted: oklch(0.22 0 0);
-  --muted-foreground: oklch(0.7 0 0);
+  --muted-foreground: oklch(0.78 0 0);
+  --volt-text: #ceff00;
   --accent: oklch(0.25 0 0);
   --accent-foreground: oklch(0.97 0 0);
   --destructive: oklch(0.65 0.22 25);
@@ -52,8 +55,10 @@
 
 @theme inline {
   --color-volt: var(--volt);
+  --color-volt-text: var(--volt-text);
+  --font-sans: 'Inter Variable', system-ui, sans-serif;
   --color-ink: var(--ink);
-  --font-display: 'Avenir Next', 'Segoe UI', ui-rounded, system-ui, sans-serif;
+  --font-display: 'Inter Variable', system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -81,8 +86,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    font-size: 106.25%;
+  }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background font-sans text-foreground antialiased;
+    font-weight: 450;
   }
 }
 

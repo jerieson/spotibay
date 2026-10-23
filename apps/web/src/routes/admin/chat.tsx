@@ -63,7 +63,7 @@ export function ChatPage() {
         {messages.data?.map((m) => (
           <div key={m.id} className="flex items-start gap-3 p-3">
             <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">{m.userName}</span> in {m.roomName} (
                 {m.roomCode}) · {formatTime(m.createdAt)}
               </p>

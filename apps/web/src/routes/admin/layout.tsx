@@ -63,7 +63,7 @@ function Login({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="flex min-h-dvh items-center justify-center px-4">
       <Card className="w-full max-w-sm space-y-4 p-6">
         <Logo />
         <h1 className="font-display text-xl font-extrabold">Admin sign in</h1>
@@ -126,11 +126,11 @@ function Panel({ username }: { username: string }) {
   });
 
   return (
-    <div className="min-h-screen md:flex">
+    <div className="min-h-dvh md:flex">
       <aside className="border-b md:sticky md:top-0 md:h-screen md:w-56 md:shrink-0 md:border-r md:border-b-0">
         <div className="flex items-center justify-between gap-2 px-4 py-3 md:block md:space-y-1">
           <Logo />
-          <p className="hidden text-xs text-muted-foreground md:block">Admin · {username}</p>
+          <p className="hidden text-sm text-muted-foreground md:block">Admin · {username}</p>
           <div className="flex items-center gap-1 md:hidden">
             <ThemeToggle />
             <Button

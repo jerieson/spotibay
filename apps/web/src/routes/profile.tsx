@@ -115,7 +115,7 @@ function ProfileForm({ user }: { user: User }) {
                 aria-checked={avatar.style === style}
                 onClick={() => setAvatar({ ...avatar, style })}
                 className={cn(
-                  'flex flex-col items-center gap-1 rounded-xl border p-2 text-xs transition-colors hover:border-ring/60',
+                  'flex flex-col items-center gap-1 rounded-xl border p-2 text-sm transition-colors hover:border-ring/60',
                   avatar.style === style && 'border-volt ring-2 ring-volt/60',
                 )}
               >

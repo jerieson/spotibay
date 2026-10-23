@@ -9,7 +9,7 @@ export function Logo() {
         </span>
       </span>
       <span className="hidden sm:inline">
-        Spoti<span className="text-volt">bay</span>
+        Spoti<span className="text-volt-text">bay</span>
       </span>
     </span>
   );

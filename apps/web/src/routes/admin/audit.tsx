@@ -72,11 +72,11 @@ export function AuditPage() {
                 </span>
               )}
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               {e.adminUsername ?? 'unknown'} · {formatTime(e.createdAt)}
             </p>
             {Object.keys(e.details).length > 0 && (
-              <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs">
+              <pre className="overflow-x-auto rounded-md bg-muted p-2 text-sm">
                 {JSON.stringify(e.details)}
               </pre>
             )}

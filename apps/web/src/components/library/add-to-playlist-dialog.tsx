@@ -92,7 +92,7 @@ export function AddToPlaylistDialog({ track }: { track: Track }) {
                   onClick={() => add.mutate({ id: p.id })}
                 >
                   <span className="truncate font-medium">{p.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
+                  <span className="shrink-0 text-sm text-muted-foreground">
                     {p.itemCount} tracks
                   </span>
                 </button>

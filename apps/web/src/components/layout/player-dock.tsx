@@ -13,8 +13,10 @@ export function PlayerDock() {
   const item = playback.item;
   const playing = playback.status === 'playing';
 
+  if (!inRoom && !item) return null;
+
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <div className="pointer-events-auto flex w-full max-w-2xl items-center gap-3 rounded-3xl border bg-card/90 p-2 pr-3 shadow-2xl shadow-black/50 ring-1 ring-volt/20 backdrop-blur">
         {item ? (
           <img
@@ -35,7 +37,7 @@ export function PlayerDock() {
           <p className="truncate text-sm font-semibold">
             {item ? item.track.title : 'Nothing playing yet'}
           </p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="truncate text-sm text-muted-foreground">
             {item
               ? item.track.channelTitle
               : inRoom
@@ -43,7 +45,7 @@ export function PlayerDock() {
                 : 'Join a room to start listening'}
           </p>
         </div>
-        <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex">
+        <span className="hidden items-center gap-1 text-sm text-muted-foreground sm:flex">
           <Users className="size-3.5" /> {members.length}
         </span>
         <Button

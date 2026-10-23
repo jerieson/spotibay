@@ -10,10 +10,10 @@ import { fetchRooms } from '@/lib/api';
 
 export function HomePage() {
   return (
-    <div className="space-y-8">
+    <div className="mx-auto max-w-6xl space-y-8">
       <section className="relative overflow-hidden rounded-3xl border bg-card p-6 sm:p-10">
         <div className="pointer-events-none absolute -top-24 -right-24 size-72 rounded-full bg-volt/15 blur-3xl" />
-        <p className="text-xs font-semibold tracking-widest text-volt uppercase">Listen in sync</p>
+        <p className="text-sm font-semibold tracking-widest text-volt-text uppercase">Listen in sync</p>
         <h1 className="mt-2 font-display text-4xl font-extrabold tracking-tight sm:text-5xl">
           One room.
           <br />
@@ -81,7 +81,7 @@ function PublicRooms() {
         </p>
       )}
       {rooms.isSuccess && rooms.data.length > 0 && (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {rooms.data.map((room) => (
             <li key={room.code}>
               <Link
@@ -90,14 +90,14 @@ function PublicRooms() {
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold">{room.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="truncate text-sm text-muted-foreground">
                     {room.nowPlaying ? room.nowPlaying.title : 'Nothing playing'}
                   </p>
                 </div>
                 <span className="flex items-center gap-1 text-sm text-muted-foreground">
                   <Users className="size-4" /> {room.memberCount}
                 </span>
-                <span className="font-mono text-xs tracking-widest text-volt">{room.code}</span>
+                <span className="font-mono text-sm tracking-widest text-volt-text">{room.code}</span>
               </Link>
             </li>
           ))}

@@ -126,7 +126,7 @@ export function PlaylistPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4">
       <Button asChild variant="ghost" size="sm" className="-ml-2">
         <Link to="/library">
           <ArrowLeft /> Library
@@ -179,7 +179,7 @@ export function PlaylistPage() {
                 readOnly
                 value={shareUrl}
                 aria-label="Share link"
-                className="h-8 w-56 text-xs"
+                className="h-8 w-56 text-sm"
               />
               <CopyButton text={shareUrl} label="Copy share link" />
             </div>

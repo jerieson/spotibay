@@ -59,13 +59,13 @@ function Room({ code }: { code: string }) {
             )}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Code <span className="font-mono tracking-widest text-volt">{room.code}</span> ·{' '}
+            Code <span className="font-mono tracking-widest text-volt-text">{room.code}</span> ·{' '}
             {members.length} {members.length === 1 ? 'listener' : 'listeners'}
           </p>
         </div>
         <CopyButton text={inviteLink} label="Copy invite link" />
       </header>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_28rem]">
         <div className="space-y-4">
           <PlayerPanel />
           <ReactionBar />
@@ -75,7 +75,7 @@ function Room({ code }: { code: string }) {
           <TabsList className="w-full">
             <TabsTrigger value="chat">Chat</TabsTrigger>
             <TabsTrigger value="queue">Queue</TabsTrigger>
-            <TabsTrigger value="members">In the room ({members.length})</TabsTrigger>
+            <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
           </TabsList>
           <TabsContent value="chat">
             <ChatPanel />

@@ -216,7 +216,7 @@ function Field({ id, schema, value, onChange }: FieldProps) {
       <div className="space-y-2">
         {Object.entries(schema.properties).map(([name, prop]) => (
           <div key={name} className="space-y-1">
-            <span className="text-xs text-muted-foreground">{name}</span>
+            <span className="text-sm text-muted-foreground">{name}</span>
             <Field
               id={`${id}-${name}`}
               schema={prop}

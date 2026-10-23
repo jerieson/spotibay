@@ -43,7 +43,7 @@ export function SharedPlaylistPage() {
 
   const p = playlist.data;
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4">
       <header className="space-y-1">
         <h1 className="font-display text-3xl font-extrabold tracking-tight">{p.name}</h1>
         <p className="text-sm text-muted-foreground">

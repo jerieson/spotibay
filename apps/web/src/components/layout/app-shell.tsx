@@ -14,10 +14,10 @@ export function AppShell() {
   if (site.data?.maintenance && !adminJoin) return <MaintenancePage />;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <SiteBanner />
       <TopBar />
-      <main className="mx-auto max-w-5xl px-4 pt-6 pb-32">
+      <main className="mx-auto w-full max-w-[90rem] px-4 sm:px-6 lg:px-8 pt-6 pb-36">
         <Outlet />
       </main>
       <PlayerDock />

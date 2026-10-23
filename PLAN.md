@@ -338,18 +338,19 @@ _(Fair mode refinement: the user whose track is playing goes to the back of the 
 
 - [ ] Rate limits (Redis-backed) on all REST routes and socket events, configurable caps for the expensive ones
 - [ ] Helmet / Caddy headers with a CSP that allows `https://www.youtube.com` scripts and frames, `https://i.ytimg.com` images
-- [ ] Structured logging (`pino`), log rotation via Docker `json-file` options (`max-size: 10m`, `max-file: 3`)
+- [ ] Structured logging (`pino`)
+- [x] Log rotation via Docker `json-file` options (`max-size: 10m`, `max-file: 3`) in `docker-compose.vm.yml`
 - [ ] Graceful shutdown: stop accepting sockets, persist playback state, close db/redis
-- [ ] Backups: a `backup` service (or host cron) running `pg_dump` nightly, keeping 7 days, plus restore instructions in `README.md`
+- [x] Backups: a `backup` service (or host cron) running `pg_dump` nightly, keeping 7 days, plus restore instructions in `README.md`
 - [ ] CI (GitHub Actions): lint, typecheck, test, build images, push to GHCR
-- [ ] `README.md` deploy steps for the VM:
+- [x] `README.md` deploy steps for the VM (adapted: Cloudflare tunnel, `docker-compose.vm.yml`):
   1. Add 2 GB swap
   2. Install Docker + Compose
   3. Open ports 80/443, point DNS to the VM
   4. Copy `docker-compose.yml`, `caddy/`, `.env`
   5. `docker compose pull && docker compose up -d`
   6. Check `docker stats` memory usage
-- [ ] Production builds happen in CI, not on the VM
+- [x] Production builds happen off the VM: `scripts/deploy.sh` builds locally and loads images over SSH (CI/GHCR dropped for now)
 
 **Done when:** the app runs on the VM over HTTPS with your domain, total memory under ~1.2 GB at idle in `docker stats`, a backup file is produced and a restore test succeeds.
 

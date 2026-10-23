@@ -25,14 +25,14 @@ export function QueuePanel({ code }: { code: string }) {
         <TabsTrigger value="history">History</TabsTrigger>
       </TabsList>
       <TabsContent value="queue" className="space-y-2">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           {mode === 'fair' ? <Users className="size-3.5" /> : <Shuffle className="size-3.5" />}
           <span title={modeLabels[mode].hint}>Order: {modeLabels[mode].name}</span>
           {isHost && (
             <Button
               size="sm"
               variant="ghost"
-              className="ml-auto h-6 px-2 text-xs"
+              className="ml-auto h-6 px-2 text-sm"
               title={modeLabels[other].hint}
               onClick={() => socket.emit('room:update', { queueMode: other })}
             >

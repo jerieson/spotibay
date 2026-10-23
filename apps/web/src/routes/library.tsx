@@ -13,7 +13,7 @@ import { createPlaylist, fetchListenHistory, fetchPlaylists } from '@/lib/api';
 
 export function LibraryPage() {
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="font-display text-3xl font-extrabold tracking-tight">Your library</h1>
       <Tabs defaultValue="playlists">
         <TabsList>
@@ -108,7 +108,7 @@ function PlaylistsTab() {
               )}
               <div className="min-w-0">
                 <p className="truncate font-semibold">{p.name}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   {p.itemCount} {p.itemCount === 1 ? 'track' : 'tracks'} ·{' '}
                   {p.isPublic ? 'Shared' : 'Private'}
                 </p>
@@ -171,7 +171,7 @@ function HistoryTab() {
           <li key={entry.id}>
             <TrackRow track={entry.track}>
               <time
-                className="shrink-0 text-xs text-muted-foreground"
+                className="shrink-0 text-sm text-muted-foreground"
                 dateTime={entry.playedAt}
                 title={new Date(entry.playedAt).toLocaleString()}
               >

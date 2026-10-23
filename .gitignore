@@ -3,3 +3,6 @@ dist
 .env
 *.tsbuildinfo
 coverage
+
+backups
+.tag

@@ -9,7 +9,7 @@ export function TrackRow({ track, children }: { track: Track; children?: ReactNo
       <img src={track.thumbnailUrl} alt="" className="size-10 shrink-0 rounded-md object-cover" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{track.title}</p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate text-sm text-muted-foreground">
           {track.channelTitle} · {formatDuration(track.durationSec * 1000)}
         </p>
       </div>

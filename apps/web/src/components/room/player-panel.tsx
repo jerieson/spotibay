@@ -5,6 +5,8 @@ import { LikeButton } from '@/components/library/like-button';
 import { ReactionLayer } from '@/components/room/reaction-layer';
 import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { Slider } from '@/components/ui/slider';
 import { usePlaybackSync } from '@/hooks/use-playback-sync';
 import { useYouTubePlayer, type PlayerHandlers } from '@/hooks/use-youtube-player';
 import { timeSync } from '@/lib/clock';
@@ -115,7 +117,7 @@ export function PlayerPanel() {
                   {item.track.title}
                 </p>
                 <p className="truncate text-sm text-muted-foreground">{item.track.channelTitle}</p>
-                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
                   Added by
                   <UserAvatar
                     avatar={item.addedBy.avatar}
@@ -157,41 +159,31 @@ export function PlayerPanel() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-xs tabular-nums text-muted-foreground">
+        <div className="flex items-center gap-2 text-sm tabular-nums text-muted-foreground">
           <span className="w-10 text-right">{formatDuration(shown)}</span>
           {canControl && item ? (
-            <input
-              type="range"
+            <Slider
               min={0}
               max={durationMs}
               step={1000}
-              value={Math.min(shown, durationMs)}
-              onChange={(e) => setScrub(Number(e.target.value))}
-              onPointerUp={commitScrub}
-              onKeyUp={commitScrub}
+              value={[Math.min(shown, durationMs)]}
+              onValueChange={([v]) => setScrub(v ?? 0)}
+              onValueCommit={commitScrub}
               aria-label="Seek"
-              className="h-2 flex-1 accent-volt"
+              className="flex-1"
             />
           ) : (
-            <div
-              className="h-2 flex-1 overflow-hidden rounded-full bg-secondary"
-              role="progressbar"
+            <Progress
+              value={durationMs ? Math.min(100, (shown / durationMs) * 100) : 0}
               aria-label="Track progress"
-              aria-valuemin={0}
-              aria-valuemax={durationMs}
-              aria-valuenow={Math.min(shown, durationMs)}
-            >
-              <div
-                className="h-full bg-volt"
-                style={{ width: durationMs ? `${Math.min(100, (shown / durationMs) * 100)}%` : 0 }}
-              />
-            </div>
+              className="h-2 flex-1"
+            />
           )}
           <span className="w-10">{formatDuration(durationMs)}</span>
         </div>
 
         {item && (
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Button
               size="sm"
               variant={votedSkip ? 'default' : 'secondary'}
@@ -203,34 +195,23 @@ export function PlayerPanel() {
             <span data-testid="skip-votes">
               {skipVotes.voters.length} of {skipVotes.needed} needed
             </span>
-            <div
-              className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary"
-              role="progressbar"
+            <Progress
+              value={Math.min(100, (skipVotes.voters.length / skipVotes.needed) * 100)}
               aria-label="Skip votes"
-              aria-valuemin={0}
-              aria-valuemax={skipVotes.needed}
-              aria-valuenow={Math.min(skipVotes.voters.length, skipVotes.needed)}
-            >
-              <div
-                className="h-full bg-destructive"
-                style={{
-                  width: `${Math.min(100, (skipVotes.voters.length / skipVotes.needed) * 100)}%`,
-                }}
-              />
-            </div>
+              className="h-2 flex-1 [&>div]:bg-destructive"
+            />
           </div>
         )}
 
         <div className="flex items-center gap-3">
           <Volume2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <input
-            type="range"
+          <Slider
             min={1}
             max={100}
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
+            value={[volume]}
+            onValueChange={([v]) => setVolume(v ?? 1)}
             aria-label="Volume (only for you)"
-            className="h-2 w-32 accent-volt"
+            className="w-32"
           />
           <Button
             variant="secondary"

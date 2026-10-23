@@ -59,7 +59,7 @@ export function ChatPanel() {
   }
 
   return (
-    <div className="flex h-96 flex-col gap-2">
+    <div className="flex h-[min(26rem,55dvh)] flex-col gap-2">
       <div className="relative min-h-0 flex-1">
         <div
           ref={listRef}
@@ -106,15 +106,15 @@ export function ChatPanel() {
 
 function Message({ message, own }: { message: ChatMessage; own: boolean }) {
   if (message.kind === 'system') {
-    return <p className="px-1 text-center text-xs text-muted-foreground">{message.body}</p>;
+    return <p className="px-1 text-center text-sm text-muted-foreground">{message.body}</p>;
   }
   const { author } = message;
   return (
     <div className="flex gap-2">
       <UserAvatar avatar={author.avatar} name={author.displayName} className="mt-0.5 size-7" />
       <div className="min-w-0 flex-1">
-        <p className="flex items-baseline gap-2 text-xs text-muted-foreground">
-          <span className={cn('truncate font-semibold', own ? 'text-volt' : 'text-foreground')}>
+        <p className="flex items-baseline gap-2 text-sm text-muted-foreground">
+          <span className={cn('truncate font-semibold', own ? 'text-volt-text' : 'text-foreground')}>
             {author.displayName}
           </span>
           <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>

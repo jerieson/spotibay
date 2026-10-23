@@ -1,4 +1,4 @@
-import { Library, Search } from 'lucide-react';
+import { Library } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -10,17 +10,11 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
+      <div className="flex h-16 items-center gap-3 mx-auto w-full max-w-[90rem] px-4 sm:px-6 lg:px-8">
         <Link to="/" aria-label="Spotibay home">
           <Logo />
         </Link>
-        <button
-          type="button"
-          className="mx-auto flex h-9 w-full max-w-md items-center gap-2 rounded-full border bg-card px-4 text-sm text-muted-foreground transition-colors hover:border-ring/60"
-        >
-          <Search className="size-4" />
-          Search or paste a YouTube link
-        </button>
+        <div className="flex-1" />
         <Link
           to="/library"
           aria-label="Library"

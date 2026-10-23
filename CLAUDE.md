@@ -27,6 +27,7 @@ The full build plan is in `PLAN.md`. Work one phase at a time. Do not start a ph
 - `pnpm --filter api db:generate` — generate a migration from schema changes
 - `pnpm --filter api db:migrate` — apply migrations
 - `pnpm --filter api hash-password <password>` — print an argon2 hash for `ADMIN_PASSWORD_HASH`
+- `scripts/deploy.sh <ssh-host>` — build images locally and deploy to the VM (see `README.md`); `scripts/backup.sh` — nightly `pg_dump` on the VM
 
 Keep these scripts working. If you add or rename one, update this section.
 

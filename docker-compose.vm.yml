@@ -1,0 +1,92 @@
+# Image-only stack for a small VM behind a Cloudflare tunnel. Images are built elsewhere and loaded
+# with scripts/deploy.sh. Caddy listens on plain HTTP on 127.0.0.1:${HTTP_PORT}; point cloudflared at it.
+name: spotibay
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  caddy:
+    image: spotibay-web:${TAG:?set TAG}
+    restart: unless-stopped
+    mem_limit: 96m
+    logging: *logging
+    ports:
+      - '127.0.0.1:${HTTP_PORT:-8083}:80'
+    environment:
+      SITE_ADDRESS: ':80'
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    image: spotibay-api:${TAG:?set TAG}
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *logging
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      APP_URL: ${APP_URL}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      RECOVERY_HMAC_SECRET: ${RECOVERY_HMAC_SECRET:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:3000/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *logging
+    command: ['postgres', '-c', 'shared_buffers=128MB', '-c', 'max_connections=30']
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    mem_limit: 96m
+    logging: *logging
+    command: ['redis-server', '--maxmemory', '64mb', '--maxmemory-policy', 'volatile-lru', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

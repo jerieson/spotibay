@@ -34,7 +34,7 @@ export function LibraryQueue({ onQueued }: { onQueued?: () => void }) {
             <Heart className="size-5 shrink-0 text-destructive" aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">Liked songs</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {likes.tracks.length} {likes.tracks.length === 1 ? 'track' : 'tracks'}
                 {likes.tracks.length > MAX_BATCH_VIDEOS && ` · latest ${MAX_BATCH_VIDEOS}`}
               </p>
@@ -49,7 +49,7 @@ export function LibraryQueue({ onQueued }: { onQueued?: () => void }) {
             <ListMusic className="size-5 shrink-0 text-muted-foreground" aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{p.name}</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {p.itemCount} {p.itemCount === 1 ? 'track' : 'tracks'}
               </p>
             </div>

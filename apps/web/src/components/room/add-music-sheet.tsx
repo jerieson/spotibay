@@ -83,7 +83,7 @@ export function AddMusicSheet() {
             </Button>
           </form>
           {remaining !== undefined && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               {remaining} {remaining === 1 ? 'search' : 'searches'} left today
             </p>
           )}
@@ -107,7 +107,7 @@ export function AddMusicSheet() {
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{track.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="truncate text-sm text-muted-foreground">
                       {track.channelTitle} · {formatDuration(track.durationSec * 1000)}
                     </p>
                   </div>

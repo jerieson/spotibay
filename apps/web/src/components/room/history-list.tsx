@@ -65,7 +65,7 @@ export function HistoryList({ code }: { code: string }) {
             />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{entry.track.title}</p>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-sm text-muted-foreground">
                 {entry.track.channelTitle} · {formatDuration(entry.track.durationSec * 1000)}
               </p>
             </div>

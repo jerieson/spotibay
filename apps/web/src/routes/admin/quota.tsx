@@ -53,7 +53,7 @@ export function QuotaPage() {
                 </div>
               ))}
             </div>
-            <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+            <div className="mt-1 flex justify-between text-sm text-muted-foreground">
               <span>{q.days[0]?.date}</span>
               <span>{q.days.at(-1)?.date}</span>
             </div>

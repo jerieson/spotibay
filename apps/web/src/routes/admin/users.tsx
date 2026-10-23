@@ -57,7 +57,7 @@ export function UsersPage() {
                   <UserAvatar avatar={u.avatar} name={u.displayName} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{u.displayName}</span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-sm text-muted-foreground">
                       Last seen {formatTime(u.lastSeenAt)}
                     </span>
                   </span>
@@ -159,7 +159,7 @@ function UserDetail({ id }: { id: string }) {
         <UserAvatar avatar={u.avatar} name={u.displayName} />
         <div className="min-w-0">
           <h2 className="truncate font-semibold">{u.displayName}</h2>
-          <p className="truncate font-mono text-xs text-muted-foreground">{u.id}</p>
+          <p className="truncate font-mono text-sm text-muted-foreground">{u.id}</p>
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
@@ -264,7 +264,7 @@ function BanList() {
               <p className="truncate">
                 <Badge variant="outline">{b.type}</Badge> {b.userName ?? b.value}
               </p>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-sm text-muted-foreground">
                 {b.expiresAt ? `until ${formatTime(b.expiresAt)}` : 'permanent'}
                 {b.reason && ` · ${b.reason}`}
                 {!b.active && ' · ended'}

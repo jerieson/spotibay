@@ -92,7 +92,7 @@ function QueueRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'relative flex items-center gap-2 bg-card p-3 first:rounded-t-2xl last:rounded-b-2xl',
+        'relative flex items-center gap-2 bg-card p-2.5 sm:p-3 first:rounded-t-2xl last:rounded-b-2xl',
         isDragging && 'z-10 shadow-lg',
       )}
       data-testid="queue-item"
@@ -111,24 +111,24 @@ function QueueRow({
       <img
         src={item.track.thumbnailUrl}
         alt=""
-        className="size-10 shrink-0 rounded-md object-cover"
+        className="size-12 shrink-0 rounded-md object-cover"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{item.track.title}</p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate font-medium">{item.track.title}</p>
+        <p className="truncate text-sm text-muted-foreground">
           {item.track.channelTitle} · {formatDuration(item.track.durationSec * 1000)}
         </p>
       </div>
       <UserAvatar
         avatar={item.addedBy.avatar}
         name={`Added by ${item.addedBy.displayName}`}
-        className="size-6"
+        className="hidden size-6 sm:block"
       />
       <div className="flex shrink-0 items-center" role="group" aria-label="Votes">
         <Button
           size="icon"
           variant="ghost"
-          className={cn('size-7', myVote === 1 && 'text-volt')}
+          className={cn('size-9', myVote === 1 && 'text-volt-text')}
           aria-label="Vote up"
           aria-pressed={myVote === 1}
           onClick={() => vote(1)}
@@ -136,7 +136,7 @@ function QueueRow({
           <ChevronUp />
         </Button>
         <span
-          className="w-5 text-center text-xs font-semibold tabular-nums"
+          className="w-6 text-center text-sm font-semibold tabular-nums"
           aria-label={`Score ${score}`}
           data-testid="queue-score"
         >
@@ -145,7 +145,7 @@ function QueueRow({
         <Button
           size="icon"
           variant="ghost"
-          className={cn('size-7', myVote === -1 && 'text-destructive')}
+          className={cn('size-9', myVote === -1 && 'text-destructive')}
           aria-label="Vote down"
           aria-pressed={myVote === -1}
           onClick={() => vote(-1)}
@@ -157,7 +157,7 @@ function QueueRow({
         <Button
           size="icon"
           variant="ghost"
-          className="size-7"
+          className="size-9"
           aria-label={`Remove ${item.track.title}`}
           onClick={() => socket.emit('queue:remove', { queueItemId: item.id })}
         >

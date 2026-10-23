@@ -1,4 +1,12 @@
-{$DOMAIN} {
+{
+	# Behind a Cloudflare tunnel: trust the local hop and read the visitor IP Cloudflare sends.
+	servers {
+		trusted_proxies static private_ranges
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+{$SITE_ADDRESS} {
 	encode zstd gzip
 
 	header {
