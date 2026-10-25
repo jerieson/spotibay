@@ -322,7 +322,7 @@ describe('sync', () => {
 });
 
 describe('unavailable videos', () => {
-  it('marks the track unplayable and skips once', async () => {
+  it('skips once and keeps the video out of this room only', async () => {
     h.videos.set(A, { durationSec: 300 });
     h.videos.set(B, { durationSec: 300 });
     const { hostSocket, code } = await setupRoom();
@@ -333,17 +333,47 @@ describe('unavailable videos', () => {
     const first = await started;
 
     const skipped = playbackWith(listener, (s) => s.item?.track.videoId === B);
-    listener.emit('playback:reportUnavailable', { queueItemId: first.item!.id });
     hostSocket.emit('playback:reportUnavailable', { queueItemId: first.item!.id });
+    listener.emit('playback:reportUnavailable', { queueItemId: first.item!.id });
     await skipped;
     await sleep(150);
 
     // The second report names an item that is no longer playing, so B must still be playing.
-    const [track] = await h.db.select().from(tracks).where(eq(tracks.videoId, A));
-    expect(track?.embeddable).toBe(false);
     const { state } = await joinAs(await h.guest(), code);
     expect(state.playback.item?.track.videoId).toBe(B);
     expect(state.playback.status).toBe('playing');
+
+    const rejected = next(hostSocket, 'error');
+    hostSocket.emit('queue:add', { url: url(A) });
+    expect((await rejected).code).toBe('track_rejected');
+
+    // A report is not proof, so the video stays playable everywhere else.
+    const [track] = await h.db.select().from(tracks).where(eq(tracks.videoId, A));
+    expect(track?.embeddable).toBe(true);
+    const other = await setupRoom();
+    const elsewhere = playbackWith(other.hostSocket, (s) => s.item?.track.videoId === A);
+    other.hostSocket.emit('queue:add', { url: url(A) });
+    await elsewhere;
+  });
+
+  it('needs as many listener reports as a vote skip', async () => {
+    h.videos.set(A, { durationSec: 300 });
+    const { hostSocket, code } = await setupRoom();
+    const { socket: one } = await joinAs(await h.guest(), code);
+    const { socket: two } = await joinAs(await h.guest(), code);
+    const started = playbackWith(hostSocket, (s) => s.item?.track.videoId === A);
+    hostSocket.emit('queue:add', { url: url(A) });
+    const first = await started;
+
+    // Three people at the default 0.5 threshold need two reports.
+    one.emit('playback:reportUnavailable', { queueItemId: first.item!.id });
+    await sleep(200);
+    const { state } = await joinAs(await h.guest(), code);
+    expect(state.playback.item?.id).toBe(first.item!.id);
+
+    const skipped = playbackWith(hostSocket, (s) => s.item?.id !== first.item!.id);
+    two.emit('playback:reportUnavailable', { queueItemId: first.item!.id });
+    expect((await skipped).status).toBe('idle');
   });
 });
 

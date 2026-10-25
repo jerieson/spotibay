@@ -24,6 +24,8 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'limits.maxQueueItemsPerUser': 'Tracks one person can have in a room queue at once.',
   'limits.maxQueueLength': 'Tracks allowed in one room queue.',
   'limits.searchesPerUserPerDay': 'YouTube searches per person per day (Pacific Time).',
+  'limits.videoLookupsPerUserPerDay':
+    'YouTube lookups of videos new to the app one person can cause per day. Each covers up to 50 videos and costs 1 quota unit.',
   'limits.maxTrackDurationSec': 'Longest track that can be queued, in seconds.',
   'limits.maxPlaylistImportItems': 'Most tracks imported from one YouTube playlist.',
   'limits.chatMessageMaxLength': 'Longest chat message, in characters.',
@@ -163,7 +165,7 @@ export const adminUserDetailSchema = adminUserSchema.extend({
 export type AdminUserDetail = z.infer<typeof adminUserDetailSchema>;
 export const adminUserResponseSchema = z.object({ user: adminUserDetailSchema });
 
-export const kickBodySchema = z.object({ userId: z.string().min(1) });
+export const kickBodySchema = z.object({ userId: z.uuid() });
 
 export const adminChatMessageSchema = z.object({
   id: z.string(),

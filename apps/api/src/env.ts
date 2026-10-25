@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/** Compose passes unset variables as '', which means "not set" here. */
+const unsetIfEmpty = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((v) => (v === '' ? undefined : v), schema.optional());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -8,10 +12,12 @@ const envSchema = z.object({
   RECOVERY_HMAC_SECRET: z.string().min(32, 'RECOVERY_HMAC_SECRET must be at least 32 characters'),
   ADMIN_USERNAME: z.string().min(1).default('admin'),
   /** Unset keeps the admin panel switched off. From: pnpm --filter api hash-password <password> */
-  ADMIN_PASSWORD_HASH: z.string().min(1).optional(),
+  ADMIN_PASSWORD_HASH: unsetIfEmpty(z.string().min(1)),
   YOUTUBE_API_KEY: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
+  /** The public URL; when set, browser requests from any other origin are refused. */
+  APP_URL: unsetIfEmpty(z.url()),
 });
 
 export const env = envSchema.parse(process.env);

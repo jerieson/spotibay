@@ -99,6 +99,7 @@ export type PlaylistErrorCode =
   | 'invalid_playlist_url'
   | 'import_not_found'
   | 'youtube_unavailable'
+  | 'rate_limited'
   | 'nothing_to_import'
   | 'room_not_found'
   | 'room_closed'

@@ -71,14 +71,14 @@ export const clientEventSchemas = {
   }),
   'room:leave': z.undefined(),
   'room:update': updateRoomBodySchema,
-  'room:setRole': z.object({ userId: z.string().min(1), role: assignableRoleSchema }),
-  'room:transferHost': z.object({ userId: z.string().min(1) }),
+  'room:setRole': z.object({ userId: z.uuid(), role: assignableRoleSchema }),
+  'room:transferHost': z.object({ userId: z.uuid() }),
   'playback:play': z.undefined(),
   'playback:pause': z.undefined(),
   'playback:seek': z.object({ positionMs: z.number().int().nonnegative() }),
   'playback:skip': z.undefined(),
   'playback:voteSkip': z.undefined(),
-  'playback:reportUnavailable': z.object({ queueItemId: z.string().min(1) }),
+  'playback:reportUnavailable': z.object({ queueItemId: z.uuid() }),
   'queue:add': z.object({ url: z.string().trim().min(1).max(MAX_QUEUE_URL_LENGTH) }),
   /** Exactly one source: a playlist (own, or public) or a list of video ids (liked songs, history). */
   'queue:addMany': z
@@ -89,14 +89,14 @@ export const clientEventSchemas = {
     .refine((p) => (p.playlistId === undefined) !== (p.videoIds === undefined), {
       message: 'Send either playlistId or videoIds',
     }),
-  'queue:remove': z.object({ queueItemId: z.string().min(1) }),
+  'queue:remove': z.object({ queueItemId: z.uuid() }),
   'queue:reorder': z.object({
-    queueItemId: z.string().min(1),
+    queueItemId: z.uuid(),
     /** Index in the queue as the sender sees it. */
     toIndex: z.number().int().nonnegative(),
   }),
   'queue:vote': z.object({
-    queueItemId: z.string().min(1),
+    queueItemId: z.uuid(),
     value: voteValueSchema.or(z.literal(0)),
   }),
   /** Length is capped by `limits.chatMessageMaxLength`, which is a setting, so the service checks it. */

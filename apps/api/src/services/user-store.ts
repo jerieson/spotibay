@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { bans, rooms, users } from '../db/schema.js';
 import type { UserRecord, UserStore } from './identity.js';
@@ -12,6 +12,7 @@ const columns = {
   createdAt: users.createdAt,
   lastSeenAt: users.lastSeenAt,
   bannedUntil: users.bannedUntil,
+  sessionVersion: users.sessionVersion,
 };
 
 export function createUserStore(db: Db): UserStore {
@@ -31,8 +32,13 @@ export function createUserStore(db: Db): UserStore {
     findById: (id) => one(db.select(columns).from(users).where(eq(users.id, id)).limit(1)),
     findByRecoveryHash: (hash) =>
       one(db.select(columns).from(users).where(eq(users.recoveryCodeHash, hash)).limit(1)),
-    async setRecoveryHash(id, hash) {
-      await db.update(users).set({ recoveryCodeHash: hash }).where(eq(users.id, id));
+    async rotateRecoveryHash(id, hash) {
+      const [row] = await db
+        .update(users)
+        .set({ recoveryCodeHash: hash, sessionVersion: sql`${users.sessionVersion} + 1` })
+        .where(eq(users.id, id))
+        .returning({ sessionVersion: users.sessionVersion });
+      return row?.sessionVersion ?? null;
     },
     updateProfile: (id, patch) =>
       one(db.update(users).set(patch).where(eq(users.id, id)).returning(columns)),

@@ -88,7 +88,7 @@ function PlaylistsTab() {
           No playlists yet. Create one, import one from YouTube, or add songs from search in a room.
         </p>
       )}
-      <ul className="grid gap-3 sm:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {playlists.data?.map((p) => (
           <li key={p.id}>
             <Link

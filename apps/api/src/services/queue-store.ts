@@ -223,9 +223,6 @@ export function createTrackStore(db: Db): TrackStore {
           },
         });
     },
-    async markUnembeddable(videoId) {
-      await db.update(tracks).set({ embeddable: false }).where(eq(tracks.videoId, videoId));
-    },
   };
 }
 

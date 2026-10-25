@@ -29,6 +29,7 @@ export type PlaybackErrorCode =
   | 'queue_limit'
   | 'duplicate_track'
   | 'youtube_unavailable'
+  | 'rate_limited'
   | 'forbidden';
 
 export class PlaybackError extends Error {
@@ -44,7 +45,7 @@ export class PlaybackError extends Error {
 export interface PlaybackServiceDeps {
   store: PlaybackStore;
   queue: QueueStore;
-  youtube: Pick<YouTubeService, 'getVideos' | 'markUnembeddable'>;
+  youtube: Pick<YouTubeService, 'getVideos'>;
   presence: Presence;
   rooms: RoomService;
   settings: { get<K extends SettingKey>(key: K): SettingsValues[K] };
@@ -228,11 +229,12 @@ export function createPlaybackService({
     return { playback, queue: items, skipVotes };
   }
 
-  async function fetchTracks(videoIds: string[]) {
+  async function fetchTracks(videoIds: string[], userId: string) {
     try {
-      return await youtube.getVideos(videoIds);
+      return await youtube.getVideos(videoIds, userId);
     } catch (err) {
       if (err instanceof YouTubeError) {
+        if (err.code === 'user_limit') throw new PlaybackError('rate_limited', err.message);
         throw new PlaybackError(
           'youtube_unavailable',
           err.code === 'not_configured'
@@ -248,10 +250,13 @@ export function createPlaybackService({
     const videoId = parseVideoId(input);
     if (!videoId) throw new PlaybackError('invalid_video', 'That is not a YouTube link');
 
-    const track = (await fetchTracks([videoId])).get(videoId);
+    const track = (await fetchTracks([videoId], userId)).get(videoId);
     if (!track) throw new PlaybackError('invalid_video', 'That video was not found');
     if (!track.embeddable) {
       throw new PlaybackError('track_rejected', 'That video cannot be played outside YouTube');
+    }
+    if ((await store.unplayable(roomId, [videoId])).has(videoId)) {
+      throw new PlaybackError('track_rejected', 'That video could not be played in this room');
     }
     if (track.durationSec === 0) {
       throw new PlaybackError('track_rejected', 'Live streams cannot be added');
@@ -409,7 +414,8 @@ export function createPlaybackService({
     videoIds: string[],
   ): Promise<AddManyResult> {
     const wanted = [...new Set(videoIds)];
-    const found = await fetchTracks(wanted);
+    const found = await fetchTracks(wanted, userId);
+    const failedHere = await store.unplayable(roomId, wanted);
     const maxSec = settings.get('limits.maxTrackDurationSec');
     const result: AddManyResult = { added: 0, duplicates: 0, unplayable: 0, overLimit: 0 };
     return withLock(roomId, async () => {
@@ -426,7 +432,13 @@ export function createPlaybackService({
       let startsNow = (await store.load(roomId)).status === 'idle';
       for (const videoId of wanted) {
         const track = found.get(videoId);
-        if (!track || !track.embeddable || track.durationSec === 0 || track.durationSec > maxSec) {
+        if (
+          !track ||
+          !track.embeddable ||
+          failedHere.has(videoId) ||
+          track.durationSec === 0 ||
+          track.durationSec > maxSec
+        ) {
           result.unplayable += 1;
         } else if (inQueue.has(videoId)) {
           result.duplicates += 1;
@@ -453,12 +465,31 @@ export function createPlaybackService({
     return queue.listHistory(roomId, HISTORY_LIMIT);
   }
 
-  /** A client's player could not play the item: remember that and move on, once. */
-  function reportUnavailable(roomId: string, queueItemId: string): Promise<void> {
+  /**
+   * A client's player could not play the item. A report from the host or a DJ moves on at once
+   * (they can skip anyway); listeners need as many reports as a vote skip, so one listener can't
+   * skip at will. The video is then kept out of this room only, never flagged for every room.
+   */
+  function reportUnavailable(
+    roomId: string,
+    userId: string,
+    role: RoomRole,
+    queueItemId: string,
+  ): Promise<void> {
     return withLock(roomId, async () => {
       const state = await store.load(roomId);
       if (state.item?.id !== queueItemId) return;
-      await youtube.markUnembeddable(state.item.track.videoId);
+      if (role === 'listener') {
+        await store.addUnavailableReport(roomId, queueItemId, userId);
+        const [members, reporters] = await Promise.all([
+          presence.list(roomId),
+          store.unavailableReporters(roomId, queueItemId),
+        ]);
+        const present = new Set(members.map((m) => m.userId));
+        const needed = skipVotesNeeded(members.length, settings.get('queue.skipVoteThreshold'));
+        if (reporters.filter((id) => present.has(id)).length < needed) return;
+      }
+      await store.markUnplayable(roomId, state.item.track.videoId);
       await advance(roomId, 'unavailable');
     });
   }

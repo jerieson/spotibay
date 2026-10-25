@@ -6,3 +6,8 @@ coverage
 
 backups
 .tag
+
+# Internal docs, kept local only
+CLAUDE.md
+PLAN.md
+DEPLOY.md

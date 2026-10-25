@@ -15,6 +15,9 @@ export const ROOM_CODE_LENGTH = 6;
 export const ROOM_NAME_MAX = 40;
 export const ROOM_PASSWORD_MIN = 4;
 export const ROOM_PASSWORD_MAX = 64;
+/** Wrong passwords allowed per person, and per address, for one room within the window. */
+export const ROOM_PASSWORD_ATTEMPTS = 10;
+export const ROOM_PASSWORD_WINDOW_SEC = 15 * 60;
 /** The host is replaced if they have been gone this long. */
 export const HOST_GRACE_MS = 60_000;
 /** A room nobody is in is closed after this long. */

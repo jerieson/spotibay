@@ -13,7 +13,9 @@ export function HomePage() {
     <div className="mx-auto max-w-6xl space-y-8">
       <section className="relative overflow-hidden rounded-3xl border bg-card p-6 sm:p-10">
         <div className="pointer-events-none absolute -top-24 -right-24 size-72 rounded-full bg-volt/15 blur-3xl" />
-        <p className="text-sm font-semibold tracking-widest text-volt-text uppercase">Listen in sync</p>
+        <p className="text-sm font-semibold tracking-widest text-volt-text uppercase">
+          Listen in sync
+        </p>
         <h1 className="mt-2 font-display text-4xl font-extrabold tracking-tight sm:text-5xl">
           One room.
           <br />
@@ -43,7 +45,7 @@ function JoinByCode() {
   }
 
   return (
-    <form onSubmit={submit} className="flex gap-2">
+    <form onSubmit={submit} className="flex w-full gap-2 sm:w-auto">
       <Input
         value={value}
         onChange={(e) => setValue(e.target.value)}
@@ -52,7 +54,7 @@ function JoinByCode() {
         maxLength={6}
         autoCapitalize="characters"
         autoComplete="off"
-        className="h-10 w-36 rounded-full font-mono tracking-widest uppercase"
+        className="h-10 min-w-0 flex-1 rounded-full font-mono tracking-widest uppercase sm:w-36 sm:flex-none"
       />
       <Button
         type="submit"
@@ -81,7 +83,7 @@ function PublicRooms() {
         </p>
       )}
       {rooms.isSuccess && rooms.data.length > 0 && (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {rooms.data.map((room) => (
             <li key={room.code}>
               <Link
@@ -97,7 +99,9 @@ function PublicRooms() {
                 <span className="flex items-center gap-1 text-sm text-muted-foreground">
                   <Users className="size-4" /> {room.memberCount}
                 </span>
-                <span className="font-mono text-sm tracking-widest text-volt-text">{room.code}</span>
+                <span className="font-mono text-sm tracking-widest text-volt-text">
+                  {room.code}
+                </span>
               </Link>
             </li>
           ))}

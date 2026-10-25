@@ -16,6 +16,8 @@ export interface UserRecord {
   createdAt: Date;
   lastSeenAt: Date;
   bannedUntil: Date | null;
+  /** Session tokens carry this; bumping it signs the user out everywhere. */
+  sessionVersion: number;
 }
 
 export interface UserStore {
@@ -26,7 +28,8 @@ export interface UserStore {
   }): Promise<UserRecord>;
   findById(id: string): Promise<UserRecord | null>;
   findByRecoveryHash(hash: string): Promise<UserRecord | null>;
-  setRecoveryHash(id: string, hash: string): Promise<void>;
+  /** Replaces the recovery hash and bumps the session version; resolves the new version, or `null` if the user is gone. */
+  rotateRecoveryHash(id: string, hash: string): Promise<number | null>;
   updateProfile(
     id: string,
     patch: { displayName?: string; avatar?: Avatar },
@@ -37,6 +40,7 @@ export interface UserStore {
 export interface SessionClaims {
   userId: string;
   issuedAt: Date;
+  sessionVersion: number;
 }
 
 export interface IdentityConfig {
@@ -99,6 +103,22 @@ export function createIdentityService(
     return createHmac('sha256', config.recoveryHmacSecret).update(normalized).digest('hex');
   }
 
+  async function verifySession(token: string): Promise<SessionClaims | null> {
+    try {
+      const { payload } = await jwtVerify(token, jwtKey, {
+        algorithms: ['HS256'],
+        currentDate: now(),
+      });
+      if (!payload.sub || payload.iat === undefined) return null;
+      // Tokens from before session versions existed carry none; they match the starting version.
+      const sv = payload.sv ?? 0;
+      if (typeof sv !== 'number') return null;
+      return { userId: payload.sub, issuedAt: new Date(payload.iat * 1000), sessionVersion: sv };
+    } catch {
+      return null;
+    }
+  }
+
   return {
     async startGuest(): Promise<{ user: UserRecord; recoveryCode: string }> {
       const recoveryCode = generateRecoveryCode();
@@ -116,38 +136,42 @@ export function createIdentityService(
       return users.findByRecoveryHash(hashRecoveryCode(normalized));
     },
 
-    async regenerateRecoveryCode(userId: string): Promise<string> {
+    /** A new recovery code; every existing session of the user stops working. */
+    async regenerateRecoveryCode(
+      userId: string,
+    ): Promise<{ recoveryCode: string; sessionVersion: number } | null> {
       const recoveryCode = generateRecoveryCode();
-      await users.setRecoveryHash(userId, hashRecoveryCode(normalizeRecoveryCode(recoveryCode)!));
-      return recoveryCode;
+      const sessionVersion = await users.rotateRecoveryHash(
+        userId,
+        hashRecoveryCode(normalizeRecoveryCode(recoveryCode)!),
+      );
+      return sessionVersion === null ? null : { recoveryCode, sessionVersion };
     },
 
-    getUser: (id: string) => users.findById(id),
     updateProfile: (id: string, patch: { displayName?: string; avatar?: Avatar }) =>
       users.updateProfile(id, patch),
     touch: (id: string) => users.touch(id),
+    verifySession,
 
-    signSession(userId: string): Promise<string> {
+    signSession(user: Pick<UserRecord, 'id' | 'sessionVersion'>): Promise<string> {
       const issuedAt = Math.floor(now().getTime() / 1000);
-      return new SignJWT({})
+      return new SignJWT({ sv: user.sessionVersion })
         .setProtectedHeader({ alg: 'HS256' })
-        .setSubject(userId)
+        .setSubject(user.id)
         .setIssuedAt(issuedAt)
         .setExpirationTime(issuedAt + SESSION_MAX_AGE_SEC)
         .sign(jwtKey);
     },
 
-    async verifySession(token: string): Promise<SessionClaims | null> {
-      try {
-        const { payload } = await jwtVerify(token, jwtKey, {
-          algorithms: ['HS256'],
-          currentDate: now(),
-        });
-        if (!payload.sub || payload.iat === undefined) return null;
-        return { userId: payload.sub, issuedAt: new Date(payload.iat * 1000) };
-      } catch {
-        return null;
-      }
+    /** The signed-in user for a session token, or `null` if it is invalid, revoked or the user is gone. */
+    async resolveSession(
+      token: string,
+    ): Promise<{ user: UserRecord; claims: SessionClaims } | null> {
+      const claims = await verifySession(token);
+      if (!claims) return null;
+      const user = await users.findById(claims.userId);
+      if (!user || user.sessionVersion !== claims.sessionVersion) return null;
+      return { user, claims };
     },
   };
 }

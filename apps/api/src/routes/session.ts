@@ -36,7 +36,7 @@ export function createSessionRouter({ identity, wordFilter, secureCookie }: Sess
       return;
     }
     const { user, recoveryCode } = await identity.startGuest();
-    setSessionCookie(res, await identity.signSession(user.id), secureCookie);
+    setSessionCookie(res, await identity.signSession(user), secureCookie);
     const body: SessionResponse = { user: toPublicUser(user), recoveryCode };
     res.status(201).json(body);
   });
@@ -47,14 +47,22 @@ export function createSessionRouter({ identity, wordFilter, secureCookie }: Sess
       res.status(404).json({ error: 'invalid_recovery_code' });
       return;
     }
-    setSessionCookie(res, await identity.signSession(user.id), secureCookie);
+    setSessionCookie(res, await identity.signSession(user), secureCookie);
     await identity.touch(user.id);
     const body: SessionResponse = { user: toPublicUser(user), recoveryCode: null };
     res.json(body);
   });
 
+  /** Replaces the recovery code and signs out every other device; this one gets a fresh cookie. */
   router.post('/session/recovery-code', requireUser, async (req, res) => {
-    const recoveryCode = await identity.regenerateRecoveryCode(req.user!.id);
+    const userId = req.user!.id;
+    const rotated = await identity.regenerateRecoveryCode(userId);
+    if (!rotated) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    const { recoveryCode, sessionVersion } = rotated;
+    setSessionCookie(res, await identity.signSession({ id: userId, sessionVersion }), secureCookie);
     res.json({ recoveryCode });
   });
 

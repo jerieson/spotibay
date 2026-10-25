@@ -16,7 +16,7 @@ export function QuotaPage() {
       <QueryState isPending={quota.isPending} error={quota.error} />
       {q && (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Meter
               label="Search calls today"
               value={q.today.searchCalls}

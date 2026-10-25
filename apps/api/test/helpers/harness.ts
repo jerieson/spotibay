@@ -35,7 +35,7 @@ import {
   createQuotaStore,
   createTrackStore,
 } from '../../src/services/queue-store.js';
-import { createYouTubeService } from '../../src/services/youtube.js';
+import { createLookupCharger, createYouTubeService } from '../../src/services/youtube.js';
 import { createPresence } from '../../src/services/presence.js';
 import { createRoomLifecycle } from '../../src/services/room-lifecycle.js';
 import { createRoomService } from '../../src/services/rooms.js';
@@ -94,6 +94,8 @@ export interface HarnessOptions {
   emptyTtlMs?: number;
   /** Turns on the per-address REST and per-user socket limits (off by default: tests share one IP). */
   rateLimits?: boolean;
+  /** Refuse browser requests from other origins, as `APP_URL` does in production. */
+  allowedOrigin?: string;
 }
 
 export async function createHarness(options: HarnessOptions = {}) {
@@ -178,6 +180,9 @@ export async function createHarness(options: HarnessOptions = {}) {
     apiKey: 'test-key',
     tracks: createTrackStore(db),
     quota: quotaStore,
+    chargeLookup: createLookupCharger(redis, () =>
+      settings.get('limits.videoLookupsPerUserPerDay'),
+    ),
     fetch: fakeFetch,
   });
   const search = createSearchService({ redis, settings, quota: quotaStore, youtube });
@@ -225,6 +230,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     playlists,
     library,
     limits: options.rateLimits ? { redis, settings } : undefined,
+    allowedOrigin: options.allowedOrigin,
     secureCookie: false,
   });
   const httpServer: Server = createServer(app);
@@ -243,6 +249,8 @@ export async function createHarness(options: HarnessOptions = {}) {
     eventLimit: options.rateLimits
       ? { redis, perSecond: () => settings.get('limits.socketEventsPerSecond') }
       : undefined,
+    passwordAttempts: { redis },
+    allowedOrigin: options.allowedOrigin,
     syncConfig: () => ({
       driftThresholdMs: settings.get('sync.driftThresholdMs'),
       checkIntervalMs: settings.get('sync.checkIntervalMs'),
@@ -253,10 +261,10 @@ export async function createHarness(options: HarnessOptions = {}) {
 
   const sockets = new Set<ClientSocket>();
 
-  function connect(cookie: string): ClientSocket {
+  function connect(cookie: string, headers: Record<string, string> = {}): ClientSocket {
     const socket: ClientSocket = connectClient(baseUrl, {
       transports: ['websocket'],
-      extraHeaders: { cookie },
+      extraHeaders: { cookie, ...headers },
       reconnection: false,
     });
     sockets.add(socket);

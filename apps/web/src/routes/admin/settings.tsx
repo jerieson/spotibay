@@ -94,7 +94,7 @@ function SettingRow({ settingKey, current }: { settingKey: SettingKey; current: 
   const id = `setting-${settingKey}`;
 
   return (
-    <div className="grid gap-3 p-4 md:grid-cols-[1fr_minmax(0,22rem)] md:items-start">
+    <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-start">
       <div>
         <Label htmlFor={id} className="font-mono text-sm">
           {settingKey}

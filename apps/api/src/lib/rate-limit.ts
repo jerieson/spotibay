@@ -7,7 +7,9 @@ export async function hit(
   limit: number,
   windowSec: number,
 ): Promise<boolean> {
-  const count = await redis.incr(key);
-  if (count === 1) await redis.expire(key, windowSec);
-  return count <= limit;
+  // One transaction, so a crash between the two can't leave a counter that never expires.
+  const results = await redis.multi().incr(key).expire(key, windowSec, 'NX').exec();
+  const [err, count] = results?.[0] ?? [new Error('rate limit transaction aborted'), 0];
+  if (err) throw err;
+  return Number(count) <= limit;
 }

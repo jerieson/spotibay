@@ -20,7 +20,7 @@ export function RoomsPage() {
       <PageHeader title="Rooms" />
       <QueryState isPending={rooms.isPending} error={rooms.error} />
       {rooms.data?.length === 0 && <Empty>No open rooms.</Empty>}
-      <div className="grid gap-4 lg:grid-cols-[1fr_minmax(0,24rem)]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
         <div className="space-y-2">
           {rooms.data?.map((r) => (
             <button

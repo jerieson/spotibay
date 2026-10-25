@@ -27,8 +27,13 @@ import { createRoomService } from './services/rooms.js';
 import { createSearchService } from './services/search.js';
 import { settings } from './services/settings.js';
 import { createBanStore, createRoomStore, createUserStore } from './services/user-store.js';
-import { createYouTubeService } from './services/youtube.js';
+import { createLookupCharger, createYouTubeService } from './services/youtube.js';
 import { createSocketServer } from './socket/server.js';
+
+const allowedOrigin = env.APP_URL ? new URL(env.APP_URL).origin : undefined;
+if (!allowedOrigin && env.NODE_ENV === 'production') {
+  logger.warn('APP_URL is not set; requests from other sites are not refused');
+}
 
 await runMigrations();
 await connectRedis();
@@ -52,6 +57,7 @@ const youtube = createYouTubeService({
   apiKey: env.YOUTUBE_API_KEY,
   tracks: createTrackStore(db),
   quota: quotaStore,
+  chargeLookup: createLookupCharger(redis, () => settings.get('limits.videoLookupsPerUserPerDay')),
 });
 const search = createSearchService({ redis, settings, quota: quotaStore, youtube });
 const playback = createPlaybackService({
@@ -100,6 +106,7 @@ const app = createApp({
   admin: { auth: adminAuth, service: adminService, redis, settings },
   limits: { redis, settings },
   wordFilter: () => settings.get('moderation.wordFilter'),
+  allowedOrigin,
   secureCookie: env.NODE_ENV === 'production',
 });
 
@@ -117,6 +124,8 @@ const io = createSocketServer({
   admin: { auth: adminAuth, service: adminService, settings },
   maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
   eventLimit: { redis, perSecond: () => settings.get('limits.socketEventsPerSecond') },
+  passwordAttempts: { redis },
+  allowedOrigin,
   syncConfig: () => ({
     driftThresholdMs: settings.get('sync.driftThresholdMs'),
     checkIntervalMs: settings.get('sync.checkIntervalMs'),

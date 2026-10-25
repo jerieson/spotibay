@@ -92,7 +92,15 @@ describe('expectedPositionMs', () => {
 });
 
 describe('YouTube service', () => {
-  function setup(opts: { apiKey?: string | undefined; failWith?: number } = {}) {
+  function setup(
+    opts: {
+      apiKey?: string | undefined;
+      failWith?: number;
+      /** Ids the fake API doesn't know. */
+      unknown?: string[];
+      chargeLookup?: (userId: string) => Promise<boolean>;
+    } = {},
+  ) {
     const stored = new Map<string, StoredTrack>();
     const quota: Array<[string, number, number]> = [];
     const calls: URL[] = [];
@@ -100,7 +108,9 @@ describe('YouTube service', () => {
     const fetchFake = (async (input: URL) => {
       calls.push(input);
       if (opts.failWith) return new Response('{}', { status: opts.failWith });
-      const ids = (input.searchParams.get('id') ?? '').split(',');
+      const ids = (input.searchParams.get('id') ?? '')
+        .split(',')
+        .filter((id) => !opts.unknown?.includes(id));
       const items = ids.map((id) => ({
         id,
         snippet: { title: `T ${id}`, channelTitle: 'C', thumbnails: { default: { url: 'u' } } },
@@ -114,12 +124,12 @@ describe('YouTube service', () => {
       tracks: {
         findMany: async (ids) => ids.flatMap((id) => stored.get(id) ?? []),
         upsertMany: async (rows) => rows.forEach((r) => stored.set(r.videoId, r)),
-        markUnembeddable: async () => undefined,
       },
       quota: {
         add: async (d, u, s) => void quota.push([d, u, s]),
         get: async () => ({ units: 0, searchCalls: 0 }),
       },
+      chargeLookup: opts.chargeLookup,
       fetch: fetchFake,
       now: () => clock,
     });
@@ -166,6 +176,34 @@ describe('YouTube service', () => {
     const res = await service.getVideos(['aaaaaaaaaaz', 'bad']);
     expect(res.get('aaaaaaaaaaz')?.embeddable).toBe(false);
     expect(calls[0]?.searchParams.get('id')).toBe('aaaaaaaaaaz');
+  });
+
+  it('does not ask again about ids YouTube did not know, until the miss expires', async () => {
+    const { service, calls, advance } = setup({ unknown: ['nnnnnnnnnnn'] });
+    expect((await service.getVideos(['nnnnnnnnnnn'])).size).toBe(0);
+    expect((await service.getVideos(['nnnnnnnnnnn'])).size).toBe(0);
+    expect(calls).toHaveLength(1);
+    advance(61 * 60 * 1000);
+    await service.getVideos(['nnnnnnnnnnn']);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('charges each call to the person who caused it and stops at their cap', async () => {
+    const charged: string[] = [];
+    const { service, calls } = setup({
+      chargeLookup: async (userId) => {
+        charged.push(userId);
+        return charged.length <= 1;
+      },
+    });
+    await service.getVideos(['aaaaaaaaaaa'], 'u1');
+    // Stored tracks cost nothing, so they don't need a charge.
+    await service.getVideos(['aaaaaaaaaaa'], 'u1');
+    expect(charged).toEqual(['u1']);
+    await expect(service.getVideos(['bbbbbbbbbbb'], 'u1')).rejects.toMatchObject({
+      code: 'user_limit',
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it('fails clearly without a key or when the API errors', async () => {
@@ -222,7 +260,6 @@ describe('getPlaylistVideoIds', () => {
       tracks: {
         findMany: async () => [],
         upsertMany: async () => undefined,
-        markUnembeddable: async () => undefined,
       },
       quota: {
         add: async (d, u, s) => void quota.push([d, u, s]),

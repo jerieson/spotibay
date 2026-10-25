@@ -197,8 +197,9 @@ function RecoverySection() {
         disabled={regenerate.isPending}
         onClick={() => {
           if (
-            !code ||
-            window.confirm('Generate a new code? Your current code will stop working.')
+            window.confirm(
+              'Generate a new code? Your current code will stop working and your other devices will be signed out.',
+            )
           ) {
             regenerate.mutate();
           }

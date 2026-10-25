@@ -8,6 +8,13 @@
       "when": 1792656901616,
       "tag": "0000_flowery_wasp",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792938136201,
+      "tag": "0001_smart_galactus",
+      "breakpoints": true
     }
   ]
 }

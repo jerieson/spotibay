@@ -33,15 +33,25 @@ function memoryStore() {
     async create(input) {
       const id = `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
       const now = new Date();
-      const row = { id, ...input, createdAt: now, lastSeenAt: now, bannedUntil: null };
+      const row = {
+        id,
+        ...input,
+        createdAt: now,
+        lastSeenAt: now,
+        bannedUntil: null,
+        sessionVersion: 0,
+      };
       users.set(id, row);
       return row;
     },
     findById: async (id) => users.get(id) ?? null,
     findByRecoveryHash: async (hash) =>
       [...users.values()].find((u) => u.recoveryCodeHash === hash) ?? null,
-    async setRecoveryHash(id, hash) {
-      users.get(id)!.recoveryCodeHash = hash;
+    async rotateRecoveryHash(id, hash) {
+      const row = users.get(id);
+      if (!row) return null;
+      row.recoveryCodeHash = hash;
+      return ++row.sessionVersion;
     },
     async updateProfile(id, patch) {
       const row = users.get(id);
@@ -155,7 +165,10 @@ describe('POST /api/session', () => {
       ...config,
       jwtSecret: 'x'.repeat(40),
     });
-    const token = await other.signSession('00000000-0000-4000-8000-000000000001');
+    const token = await other.signSession({
+      id: '00000000-0000-4000-8000-000000000001',
+      sessionVersion: 0,
+    });
     const res = await request(app).get('/api/me').set('Cookie', `${SESSION_COOKIE}=${token}`);
     expect(res.status).toBe(401);
   });
@@ -206,6 +219,21 @@ describe('recovery', () => {
       .post('/api/session/recover')
       .send({ code: regen.body.recoveryCode });
     expect(fresh.body.user.id).toBe(userId);
+  });
+
+  it('regenerating signs out other devices but keeps this one', async () => {
+    const original = await request(ctx.app).post('/api/session/recover').send({ code });
+    const otherDevice = sessionCookie(original);
+    const thisDevice = sessionCookie(
+      await request(ctx.app).post('/api/session/recover').send({ code }),
+    );
+    const regen = await request(ctx.app)
+      .post('/api/session/recovery-code')
+      .set('Cookie', thisDevice);
+    expect(regen.status).toBe(200);
+    expect((await request(ctx.app).get('/api/me').set('Cookie', otherDevice)).status).toBe(401);
+    const me = await request(ctx.app).get('/api/me').set('Cookie', sessionCookie(regen));
+    expect(me.body.user.id).toBe(userId);
   });
 
   it('requires a session to regenerate', async () => {

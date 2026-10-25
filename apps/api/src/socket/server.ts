@@ -4,6 +4,8 @@ import { Server, type Socket } from 'socket.io';
 import {
   ADMIN_COOKIE,
   ADMIN_STATS_INTERVAL_MS,
+  ROOM_PASSWORD_ATTEMPTS,
+  ROOM_PASSWORD_WINDOW_SEC,
   SESSION_COOKIE,
   clientEventSchemas,
   isPublicSettingKey,
@@ -15,6 +17,7 @@ import {
   type RoomState,
   type SyncConfig,
 } from '@spotibay/shared';
+import { isAllowedOrigin } from '../middleware/origin.js';
 import { readCookie } from '../middleware/session.js';
 import type { AdminAuth } from '../services/admin-auth.js';
 import type { AdminService } from '../services/admin.js';
@@ -63,7 +66,11 @@ export interface SocketServerDeps {
   maxUsersPerRoom: () => number;
   /** Per-user cap on inbound events per second; the limiter is off when omitted. */
   eventLimit?: { redis: Redis; perSecond: () => number };
+  /** Counts wrong room passwords so they can't be guessed; unlimited when omitted. */
+  passwordAttempts?: { redis: Redis };
   syncConfig: () => SyncConfig;
+  /** The site's own origin; handshakes from pages on other origins are refused when set. */
+  allowedOrigin?: string;
   onError?: (err: unknown) => void;
 }
 
@@ -97,13 +104,19 @@ export function createSocketServer(deps: SocketServerDeps) {
     ServerToClientEvents,
     Record<string, never>,
     SocketData
-  >(deps.httpServer, { serveClient: false });
+  >(deps.httpServer, {
+    serveClient: false,
+    // WebSockets ignore CORS, so a page on another origin could otherwise connect with our cookies.
+    allowRequest: (req, callback) => {
+      const { allowedOrigin } = deps;
+      callback(null, !allowedOrigin || isAllowedOrigin(req.headers.origin, allowedOrigin));
+    },
+  });
 
   io.use(async (socket, next) => {
     try {
       const token = readCookie(socket.handshake.headers.cookie, SESSION_COOKIE);
-      const claims = token ? await identity.verifySession(token) : null;
-      const user = claims ? await identity.getUser(claims.userId) : null;
+      const user = token ? (await identity.resolveSession(token))?.user : undefined;
       if (!user) {
         next(new Error('unauthenticated'));
         return;
@@ -173,6 +186,28 @@ export function createSocketServer(deps: SocketServerDeps) {
       default:
         return 'invalid_payload';
     }
+  }
+
+  const passwordAttemptKeys = (roomId: string, socket: AppSocket) => [
+    `ratelimit:roompass:${roomId}:user:${socket.data.user.id}`,
+    `ratelimit:roompass:${roomId}:ip:${socket.data.ip}`,
+  ];
+
+  /** Whether this person or address has used up their wrong passwords for the room. */
+  async function passwordLocked(roomId: string, socket: AppSocket): Promise<boolean> {
+    if (!deps.passwordAttempts) return false;
+    const counts = await deps.passwordAttempts.redis.mget(passwordAttemptKeys(roomId, socket));
+    return counts.some((c) => Number(c ?? 0) >= ROOM_PASSWORD_ATTEMPTS);
+  }
+
+  async function recordWrongPassword(roomId: string, socket: AppSocket): Promise<void> {
+    if (!deps.passwordAttempts) return;
+    const { redis } = deps.passwordAttempts;
+    await Promise.all(
+      passwordAttemptKeys(roomId, socket).map((key) =>
+        hit(redis, key, ROOM_PASSWORD_ATTEMPTS, ROOM_PASSWORD_WINDOW_SEC),
+      ),
+    );
   }
 
   function parse<E extends EventName>(socket: AppSocket, event: E, raw: unknown) {
@@ -263,8 +298,15 @@ export function createSocketServer(deps: SocketServerDeps) {
     await leaveCurrentRoom(socket);
 
     const isHost = row.ownerId === user.id;
-    if (!isHost && !adminJoin && !(await rooms.checkPassword(row, payload.password))) {
-      return reject('wrong_password', 'Wrong room password');
+    if (!isHost && !adminJoin && row.passwordHash !== null) {
+      // Checked before argon2 runs, so a locked-out guesser costs no hashing either.
+      if (await passwordLocked(row.id, socket)) {
+        return reject('rate_limited', 'Too many wrong passwords, try again later');
+      }
+      if (!(await rooms.checkPassword(row, payload.password))) {
+        await recordWrongPassword(row.id, socket);
+        return reject('wrong_password', 'Wrong room password');
+      }
     }
     const joined = await presence.join(
       row.id,
@@ -417,7 +459,12 @@ export function createSocketServer(deps: SocketServerDeps) {
         if (!payload) return;
         const current = await currentRoom(socket);
         if (!current) return fail(socket, 'not_in_room', 'Join a room first');
-        await playback.reportUnavailable(current.row.id, payload.queueItemId);
+        await playback.reportUnavailable(
+          current.row.id,
+          socket.data.user.id,
+          current.role,
+          payload.queueItemId,
+        );
       });
     });
 

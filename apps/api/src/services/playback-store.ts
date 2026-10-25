@@ -9,9 +9,15 @@ import {
 export const playbackKey = (roomId: string) => `room:${roomId}:playback`;
 export const skipVotesKey = (roomId: string, queueItemId: string) =>
   `room:${roomId}:skipvotes:${queueItemId}`;
+export const unavailableReportsKey = (roomId: string, queueItemId: string) =>
+  `room:${roomId}:unavailable:${queueItemId}`;
+/** Videos a room's players could not play; scoped to the room so reports can't block them elsewhere. */
+export const unplayableKey = (roomId: string) => `room:${roomId}:unplayable`;
 
 /** Skip votes are per track and cleared when it ends; the TTL only catches leftovers. */
 const SKIP_VOTES_TTL_SEC = 6 * 60 * 60;
+/** A video that failed in a room is kept out of it for a day; it may play again once YouTube allows it. */
+const UNPLAYABLE_TTL_SEC = 24 * 60 * 60;
 
 /** Reads and writes the `room:{id}:playback` hash. */
 export function createPlaybackStore(redis: Redis) {
@@ -47,7 +53,7 @@ export function createPlaybackStore(redis: Redis) {
   }
 
   async function clear(roomId: string): Promise<void> {
-    await redis.del(playbackKey(roomId));
+    await redis.del(playbackKey(roomId), unplayableKey(roomId));
   }
 
   async function nowPlaying(roomId: string): Promise<NowPlaying | null> {
@@ -68,10 +74,44 @@ export function createPlaybackStore(redis: Redis) {
   }
 
   async function clearSkipVotes(roomId: string, queueItemId: string) {
-    await redis.del(skipVotesKey(roomId, queueItemId));
+    await redis.del(skipVotesKey(roomId, queueItemId), unavailableReportsKey(roomId, queueItemId));
   }
 
-  return { load, save, clear, nowPlaying, addSkipVote, skipVoters, clearSkipVotes };
+  async function addUnavailableReport(roomId: string, queueItemId: string, userId: string) {
+    const key = unavailableReportsKey(roomId, queueItemId);
+    await redis.sadd(key, userId);
+    await redis.expire(key, SKIP_VOTES_TTL_SEC);
+  }
+
+  function unavailableReporters(roomId: string, queueItemId: string): Promise<string[]> {
+    return redis.smembers(unavailableReportsKey(roomId, queueItemId));
+  }
+
+  async function markUnplayable(roomId: string, videoId: string) {
+    await redis.sadd(unplayableKey(roomId), videoId);
+    await redis.expire(unplayableKey(roomId), UNPLAYABLE_TTL_SEC);
+  }
+
+  /** Which of `videoIds` this room could not play recently. */
+  async function unplayable(roomId: string, videoIds: string[]): Promise<Set<string>> {
+    if (videoIds.length === 0) return new Set();
+    const flags = await redis.smismember(unplayableKey(roomId), ...videoIds);
+    return new Set(videoIds.filter((_, i) => flags[i] === 1));
+  }
+
+  return {
+    load,
+    save,
+    clear,
+    nowPlaying,
+    addSkipVote,
+    skipVoters,
+    clearSkipVotes,
+    addUnavailableReport,
+    unavailableReporters,
+    markUnplayable,
+    unplayable,
+  };
 }
 
 export type PlaybackStore = ReturnType<typeof createPlaybackStore>;

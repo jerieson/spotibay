@@ -121,7 +121,9 @@ export function AddMusicSheet() {
                     aria-label={`Add ${track.title} to queue`}
                   >
                     {added.has(track.videoId) ? <Check /> : <Plus />}
-                    {added.has(track.videoId) ? 'Added' : 'Add'}
+                    <span className="hidden sm:inline">
+                      {added.has(track.videoId) ? 'Added' : 'Add'}
+                    </span>
                   </Button>
                 </li>
               ))}

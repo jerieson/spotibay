@@ -16,7 +16,7 @@ interface Options {
   joined: boolean;
 }
 
-/** Keeps the local YouTube player on the room's playback state (see "Sync algorithm" in PLAN.md). */
+/** Keeps the local YouTube player on the room's playback state, correcting drift by seeking. */
 export function usePlaybackSync({ controls, ready, joined }: Options) {
   const version = useRoomStore((s) => s.playback.version);
   const checkIntervalMs = useRoomStore((s) => s.sync.checkIntervalMs);

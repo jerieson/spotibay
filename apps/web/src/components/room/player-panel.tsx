@@ -110,21 +110,24 @@ export function PlayerPanel() {
               <img
                 src={item.track.thumbnailUrl}
                 alt=""
-                className="size-14 shrink-0 rounded-lg object-cover"
+                className="size-12 shrink-0 rounded-lg object-cover sm:size-14"
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold" data-testid="now-playing-title">
+                <p
+                  className="line-clamp-2 leading-snug font-semibold break-words sm:line-clamp-1"
+                  data-testid="now-playing-title"
+                >
                   {item.track.title}
                 </p>
                 <p className="truncate text-sm text-muted-foreground">{item.track.channelTitle}</p>
-                <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
-                  Added by
+                <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+                  <span className="shrink-0">Added by</span>
                   <UserAvatar
                     avatar={item.addedBy.avatar}
                     name={item.addedBy.displayName}
-                    className="size-4"
+                    className="size-4 shrink-0"
                   />
-                  {item.addedBy.displayName}
+                  <span className="truncate">{item.addedBy.displayName}</span>
                 </p>
               </div>
             </>
@@ -183,7 +186,7 @@ export function PlayerPanel() {
         </div>
 
         {item && (
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
             <Button
               size="sm"
               variant={votedSkip ? 'default' : 'secondary'}
@@ -198,7 +201,7 @@ export function PlayerPanel() {
             <Progress
               value={Math.min(100, (skipVotes.voters.length / skipVotes.needed) * 100)}
               aria-label="Skip votes"
-              className="h-2 flex-1 [&>div]:bg-destructive"
+              className="h-2 min-w-16 flex-1 [&>div]:bg-destructive"
             />
           </div>
         )}

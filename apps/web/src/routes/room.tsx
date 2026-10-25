@@ -49,7 +49,7 @@ function Room({ code }: { code: string }) {
     <div className="space-y-6">
       <header className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-display text-3xl font-extrabold tracking-tight">
+          <h1 className="line-clamp-2 font-display text-2xl font-extrabold tracking-tight break-words sm:line-clamp-1 sm:text-3xl">
             {room.name}
             {room.hasPassword && (
               <Lock
@@ -65,8 +65,8 @@ function Room({ code }: { code: string }) {
         </div>
         <CopyButton text={inviteLink} label="Copy invite link" />
       </header>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_28rem]">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_28rem]">
+        <div className="min-w-0 space-y-4">
           <PlayerPanel />
           <ReactionBar />
           <AddMusicSheet />

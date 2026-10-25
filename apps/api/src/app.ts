@@ -2,6 +2,7 @@ import express, { type ErrorRequestHandler, type RequestHandler } from 'express'
 import type { Redis } from 'ioredis';
 import type { HealthResponse, SiteResponse } from '@spotibay/shared';
 import { logger } from './logger.js';
+import { originGuard } from './middleware/origin.js';
 import { rateLimit } from './middleware/rate-limit.js';
 import { attachUser, banGuard } from './middleware/session.js';
 import { attachAdmin, createAdminRouter } from './routes/admin.js';
@@ -53,6 +54,8 @@ export interface AppDeps {
   admin?: AdminDeps;
   /** Per-address REST limits, read live from settings; enabled when provided. */
   limits?: { redis: Redis; settings: Pick<SettingsService, 'get'> };
+  /** The site's own origin (from `APP_URL`); unsafe requests from other origins are refused when set. */
+  allowedOrigin?: string;
   secureCookie?: boolean;
 }
 
@@ -91,6 +94,7 @@ export function createApp({
   library,
   admin,
   limits,
+  allowedOrigin,
   secureCookie = true,
 }: AppDeps = {}) {
   const app = express();
@@ -125,6 +129,8 @@ export function createApp({
     }
     res.status(body.status === 'ok' ? 200 : 503).json(body);
   });
+
+  if (allowedOrigin) app.use('/api', originGuard(allowedOrigin));
 
   if (limits) {
     const { redis, settings } = limits;

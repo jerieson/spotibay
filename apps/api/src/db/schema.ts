@@ -37,6 +37,7 @@ export const users = pgTable('users', {
   createdAt: createdAt(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   bannedUntil: timestamp('banned_until', { withTimezone: true }),
+  sessionVersion: integer('session_version').notNull().default(0),
 });
 
 export const admins = pgTable('admins', {

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import type { RoomResponse } from '@spotibay/shared';
+import { ROOM_PASSWORD_ATTEMPTS, type RoomResponse } from '@spotibay/shared';
 import { bans } from '../src/db/schema.js';
 import {
   connected,
@@ -125,6 +125,24 @@ describe('room:join', () => {
     );
     expect((await joinRoom(guestSocket, room.code, 'opensesame')).ack.ok).toBe(true);
     expect((await joinRoom(hostSocket, room.code)).ack.ok).toBe(true);
+  });
+
+  it('locks out a guesser after too many wrong passwords', async () => {
+    const host = await h.guest();
+    const room = await createRoom(host, { visibility: 'private', password: 'opensesame' });
+    // Someone has to be in the room, or it closes as empty while the guesses run.
+    expect((await joinRoom(await host.socket(), room.code)).ack.ok).toBe(true);
+    const guesser = await (await h.guest()).socket();
+    for (let i = 0; i < ROOM_PASSWORD_ATTEMPTS; i++) {
+      expect(errorOf((await joinRoom(guesser, room.code, `guess-${i}`)).ack)?.code).toBe(
+        'wrong_password',
+      );
+    }
+    expect(errorOf((await joinRoom(guesser, room.code, 'opensesame')).ack)?.code).toBe(
+      'rate_limited',
+    );
+    // The host never needs the password, so the lockout can't keep them out.
+    expect((await joinRoom(await host.socket(), room.code)).ack.ok).toBe(true);
   });
 
   it('allows joining a private room without a password when none is set', async () => {

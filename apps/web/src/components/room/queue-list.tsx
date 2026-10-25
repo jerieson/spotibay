@@ -111,10 +111,12 @@ function QueueRow({
       <img
         src={item.track.thumbnailUrl}
         alt=""
-        className="size-12 shrink-0 rounded-md object-cover"
+        className="size-10 shrink-0 rounded-md object-cover sm:size-12"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{item.track.title}</p>
+        <p className="line-clamp-2 text-sm leading-snug font-medium break-words sm:line-clamp-1 sm:text-base">
+          {item.track.title}
+        </p>
         <p className="truncate text-sm text-muted-foreground">
           {item.track.channelTitle} · {formatDuration(item.track.durationSec * 1000)}
         </p>
@@ -128,7 +130,7 @@ function QueueRow({
         <Button
           size="icon"
           variant="ghost"
-          className={cn('size-9', myVote === 1 && 'text-volt-text')}
+          className={cn('size-8 sm:size-9', myVote === 1 && 'text-volt-text')}
           aria-label="Vote up"
           aria-pressed={myVote === 1}
           onClick={() => vote(1)}
@@ -136,7 +138,7 @@ function QueueRow({
           <ChevronUp />
         </Button>
         <span
-          className="w-6 text-center text-sm font-semibold tabular-nums"
+          className="w-5 text-center text-sm font-semibold tabular-nums sm:w-6"
           aria-label={`Score ${score}`}
           data-testid="queue-score"
         >
@@ -145,7 +147,7 @@ function QueueRow({
         <Button
           size="icon"
           variant="ghost"
-          className={cn('size-9', myVote === -1 && 'text-destructive')}
+          className={cn('size-8 sm:size-9', myVote === -1 && 'text-destructive')}
           aria-label="Vote down"
           aria-pressed={myVote === -1}
           onClick={() => vote(-1)}
@@ -157,7 +159,7 @@ function QueueRow({
         <Button
           size="icon"
           variant="ghost"
-          className="size-9"
+          className="size-8 sm:size-9"
           aria-label={`Remove ${item.track.title}`}
           onClick={() => socket.emit('queue:remove', { queueItemId: item.id })}
         >

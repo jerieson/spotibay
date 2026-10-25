@@ -26,7 +26,7 @@ export function UsersPage() {
   return (
     <>
       <PageHeader title="Users & Bans" />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="space-y-3">
           <form
             className="flex gap-2"
@@ -111,7 +111,7 @@ function BanFields({
   setMinutes: (v: number | null) => void;
 }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-[1fr_9rem]">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]">
       <Input
         placeholder="Reason (optional)"
         aria-label="Reason"

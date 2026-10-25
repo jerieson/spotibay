@@ -1,3 +1,4 @@
+import type { Redis } from 'ioredis';
 import { VIDEO_ID_PATTERN, type Track } from '@spotibay/shared';
 import { z } from 'zod';
 
@@ -16,6 +17,10 @@ const PLAYLIST_ITEMS_COST = 1;
 const PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,64}$/;
 /** Stored track details are reused for this long before asking YouTube again. */
 const TRACK_TTL_MS = 24 * 60 * 60 * 1000;
+/** Ids YouTube didn't know are not asked about again for this long, so repeats cost no quota. */
+const MISSING_TTL_MS = 60 * 60 * 1000;
+const MISSING_MAX_ENTRIES = 10_000;
+const LOOKUP_COUNT_TTL_SEC = 2 * 24 * 60 * 60;
 
 export interface StoredTrack extends Track {
   embeddable: boolean;
@@ -25,7 +30,6 @@ export interface StoredTrack extends Track {
 export interface TrackStore {
   findMany(videoIds: string[]): Promise<StoredTrack[]>;
   upsertMany(tracks: StoredTrack[]): Promise<void>;
-  markUnembeddable(videoId: string): Promise<void>;
 }
 
 export interface QuotaStore {
@@ -35,7 +39,7 @@ export interface QuotaStore {
   get(date: string): Promise<{ units: number; searchCalls: number }>;
 }
 
-export type YouTubeErrorCode = 'not_configured' | 'api_error' | 'not_found';
+export type YouTubeErrorCode = 'not_configured' | 'api_error' | 'not_found' | 'user_limit';
 
 export class YouTubeError extends Error {
   constructor(
@@ -131,10 +135,32 @@ const searchResponseSchema = z.object({
   items: z.array(z.object({ id: z.object({ videoId: z.string().optional() }) })).default([]),
 });
 
+/** Spends one quota-costing lookup for a person; resolves `false` once they are over today's cap. */
+export type LookupCharger = (userId: string) => Promise<boolean>;
+
+/** Per-person daily lookup cap in Redis (`ytlookups:{userId}:{date}`, Pacific Time like the quota). */
+export function createLookupCharger(
+  redis: Redis,
+  perUserPerDay: () => number,
+  now: () => Date = () => new Date(),
+): LookupCharger {
+  return async (userId) => {
+    const key = `ytlookups:${userId}:${quotaDate(now())}`;
+    const results = await redis.multi().incr(key).expire(key, LOOKUP_COUNT_TTL_SEC).exec();
+    const [err, used] = results?.[0] ?? [new Error('lookup count transaction aborted'), 0];
+    if (err) throw err;
+    if (Number(used) <= perUserPerDay()) return true;
+    await redis.decr(key);
+    return false;
+  };
+}
+
 export interface YouTubeServiceDeps {
   apiKey: string | undefined;
   tracks: TrackStore;
   quota: QuotaStore;
+  /** Caps the lookups one person can trigger; uncapped when omitted. */
+  chargeLookup?: LookupCharger;
   fetch?: typeof fetch;
   now?: () => Date;
 }
@@ -143,11 +169,44 @@ export function createYouTubeService({
   apiKey,
   tracks,
   quota,
+  chargeLookup,
   fetch: fetchImpl = fetch,
   now = () => new Date(),
 }: YouTubeServiceDeps) {
-  async function fetchVideos(ids: string[]): Promise<StoredTrack[]> {
+  /** videoId -> when we may ask YouTube about it again. Insertion order doubles as age order. */
+  const missing = new Map<string, number>();
+
+  function rememberMissing(ids: string[]) {
+    const until = now().getTime() + MISSING_TTL_MS;
+    for (const id of ids) {
+      missing.delete(id);
+      missing.set(id, until);
+    }
+    for (const oldest of missing.keys()) {
+      if (missing.size <= MISSING_MAX_ENTRIES) break;
+      missing.delete(oldest);
+    }
+  }
+
+  function knownMissing(id: string): boolean {
+    const until = missing.get(id);
+    if (until === undefined) return false;
+    if (until > now().getTime()) return true;
+    missing.delete(id);
+    return false;
+  }
+
+  /** Charges a lookup to `userId` (if given), refusing once they are over their cap. */
+  async function charge(userId: string | undefined) {
+    if (!chargeLookup || userId === undefined) return;
+    if (!(await chargeLookup(userId))) {
+      throw new YouTubeError('user_limit', "You've looked up too many new videos today");
+    }
+  }
+
+  async function fetchVideos(ids: string[], userId: string | undefined): Promise<StoredTrack[]> {
     if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
+    await charge(userId);
     const url = new URL(VIDEOS_ENDPOINT);
     url.searchParams.set('part', 'snippet,contentDetails,status');
     url.searchParams.set('id', ids.join(','));
@@ -174,19 +233,24 @@ export function createYouTubeService({
     });
   }
 
-  /** Details for the given videos, from the track table when fresh, else from `videos.list`. Unknown ids are absent. */
-  async function getVideos(videoIds: string[]): Promise<Map<string, StoredTrack>> {
+  /**
+   * Details for the given videos, from the track table when fresh, else from `videos.list`.
+   * Unknown ids are absent. Calls YouTube makes for `userId` count toward their daily cap.
+   */
+  async function getVideos(videoIds: string[], userId?: string): Promise<Map<string, StoredTrack>> {
     const ids = [...new Set(videoIds)].filter((id) => VIDEO_ID_PATTERN.test(id));
     const result = new Map<string, StoredTrack>();
     const cutoff = now().getTime() - TRACK_TTL_MS;
     for (const track of await tracks.findMany(ids)) {
       if (track.fetchedAt.getTime() >= cutoff) result.set(track.videoId, track);
     }
-    const missing = ids.filter((id) => !result.has(id));
-    for (let i = 0; i < missing.length; i += VIDEOS_BATCH) {
-      const fetched = await fetchVideos(missing.slice(i, i + VIDEOS_BATCH));
+    const toFetch = ids.filter((id) => !result.has(id) && !knownMissing(id));
+    for (let i = 0; i < toFetch.length; i += VIDEOS_BATCH) {
+      const batch = toFetch.slice(i, i + VIDEOS_BATCH);
+      const fetched = await fetchVideos(batch, userId);
       await tracks.upsertMany(fetched);
       for (const track of fetched) result.set(track.videoId, track);
+      rememberMissing(batch.filter((id) => !result.has(id)));
     }
     return result;
   }
@@ -214,8 +278,12 @@ export function createYouTubeService({
     });
   }
 
-  /** Video ids of a public YouTube playlist in order, at most `max` of them (one call per 50). */
-  async function getPlaylistVideoIds(playlistId: string, max: number): Promise<string[]> {
+  /** Video ids of a public YouTube playlist in order, at most `max` of them (one call per 50, charged to `userId`). */
+  async function getPlaylistVideoIds(
+    playlistId: string,
+    max: number,
+    userId?: string,
+  ): Promise<string[]> {
     if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
     const ids: string[] = [];
     let pageToken: string | undefined;
@@ -226,6 +294,7 @@ export function createYouTubeService({
       url.searchParams.set('maxResults', String(PLAYLIST_PAGE_SIZE));
       url.searchParams.set('key', apiKey);
       if (pageToken) url.searchParams.set('pageToken', pageToken);
+      await charge(userId);
       const res = await fetchImpl(url);
       await quota.add(quotaDate(now()), PLAYLIST_ITEMS_COST, 0);
       if (res.status === 404 || res.status === 403) {
@@ -245,7 +314,7 @@ export function createYouTubeService({
     return ids.slice(0, max);
   }
 
-  return { getVideos, search, getPlaylistVideoIds, markUnembeddable: tracks.markUnembeddable };
+  return { getVideos, search, getPlaylistVideoIds };
 }
 
 export type YouTubeService = ReturnType<typeof createYouTubeService>;

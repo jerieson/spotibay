@@ -44,12 +44,12 @@ export function attachUser(identity: IdentityService, secureCookie: boolean): Re
   return async (req, res, next) => {
     try {
       const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-      const claims = token ? await identity.verifySession(token) : null;
-      const user = claims ? await identity.getUser(claims.userId) : null;
-      if (claims && user) {
+      const session = token ? await identity.resolveSession(token) : null;
+      if (session) {
+        const { user, claims } = session;
         req.user = user;
         if (Date.now() - claims.issuedAt.getTime() > REFRESH_AFTER_MS) {
-          setSessionCookie(res, await identity.signSession(user.id), secureCookie);
+          setSessionCookie(res, await identity.signSession(user), secureCookie);
           await identity.touch(user.id);
         }
       }
