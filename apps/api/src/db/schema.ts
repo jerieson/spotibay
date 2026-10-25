@@ -70,6 +70,17 @@ export const tracks = pgTable('tracks', {
   thumbnailUrl: text('thumbnail_url').notNull(),
   embeddable: boolean('embeddable').notNull().default(true),
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Set once the title, channel and thumbnail come from the music catalog; YouTube refreshes keep them. */
+  catalogId: text('catalog_id'),
+});
+
+/** Which video plays a catalog (Deezer) track, found once and shared by everyone. */
+export const catalogMatches = pgTable('catalog_matches', {
+  catalogId: text('catalog_id').primaryKey(),
+  videoId: text('video_id')
+    .notNull()
+    .references(() => tracks.videoId),
+  createdAt: createdAt(),
 });
 
 export const queueItems = pgTable(

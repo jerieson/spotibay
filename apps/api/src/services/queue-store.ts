@@ -3,12 +3,14 @@ import type { HistoryEntry, QueueItem, VoteValue } from '@spotibay/shared';
 import type { Db } from '../db/client.js';
 import {
   apiQuotaUsage,
+  catalogMatches,
   listenHistory,
   queueItems,
   queueVotes,
   tracks,
   users,
 } from '../db/schema.js';
+import type { CatalogMatchStore } from './search.js';
 import type { QuotaStore, StoredTrack, TrackStore } from './youtube.js';
 
 export type ActiveStatus = 'queued' | 'playing';
@@ -207,21 +209,57 @@ export function createTrackStore(db: Db): TrackStore {
       return db.select().from(tracks).where(inArray(tracks.videoId, videoIds));
     },
     async upsertMany(rows: StoredTrack[]) {
-      if (rows.length === 0) return;
-      await db
+      if (rows.length === 0) return [];
+      // Catalog metadata is cleaner than YouTube's, so a refresh only replaces it on plain tracks.
+      const keep = (column: string) =>
+        sql.raw(
+          `case when tracks.catalog_id is null then excluded.${column} else tracks.${column} end`,
+        );
+      return db
         .insert(tracks)
         .values(rows)
         .onConflictDoUpdate({
           target: tracks.videoId,
           set: {
-            title: sql`excluded.title`,
-            channelTitle: sql`excluded.channel_title`,
+            title: keep('title'),
+            channelTitle: keep('channel_title'),
             durationSec: sql`excluded.duration_sec`,
-            thumbnailUrl: sql`excluded.thumbnail_url`,
+            thumbnailUrl: keep('thumbnail_url'),
             embeddable: sql`excluded.embeddable`,
             fetchedAt: sql`excluded.fetched_at`,
           },
-        });
+        })
+        .returning();
+    },
+  };
+}
+
+export function createCatalogMatchStore(db: Db): CatalogMatchStore {
+  return {
+    async find(catalogId) {
+      const [row] = await db
+        .select({ videoId: catalogMatches.videoId })
+        .from(catalogMatches)
+        .where(eq(catalogMatches.catalogId, catalogId));
+      return row?.videoId ?? null;
+    },
+    async save(song, videoId) {
+      await db.transaction(async (tx) => {
+        await tx
+          .insert(catalogMatches)
+          .values({ catalogId: song.id, videoId })
+          .onConflictDoUpdate({ target: catalogMatches.catalogId, set: { videoId } });
+        // The first song matched to a video names it; later ones (say, the album cut) don't rename it.
+        await tx
+          .update(tracks)
+          .set({
+            title: song.title,
+            channelTitle: song.artist,
+            ...(song.artworkUrl ? { thumbnailUrl: song.artworkUrl } : {}),
+            catalogId: song.id,
+          })
+          .where(and(eq(tracks.videoId, videoId), sql`${tracks.catalogId} is null`));
+      });
     },
   };
 }

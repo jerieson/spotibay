@@ -153,6 +153,16 @@ export function createApp({
         windowSec: 60,
       }),
     );
+    // Suggestions fire while typing and share one Deezer allowance, so one address can't hog it.
+    app.get(
+      '/api/search/suggest',
+      rateLimit({
+        redis,
+        name: 'suggest',
+        limit: () => settings.get('limits.suggestionsPerMinute'),
+        windowSec: 60,
+      }),
+    );
   }
 
   if ((identity && bans) || admin) app.use('/api', express.json({ limit: '16kb' }));

@@ -30,7 +30,9 @@ import * as schema from '../../src/db/schema.js';
 import { createIdentityService } from '../../src/services/identity.js';
 import { createPlaybackService } from '../../src/services/playback.js';
 import { createPlaybackStore } from '../../src/services/playback-store.js';
+import { createCatalogService } from '../../src/services/catalog.js';
 import {
+  createCatalogMatchStore,
   createQueueStore,
   createQuotaStore,
   createTrackStore,
@@ -82,8 +84,18 @@ export type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 /** Canned `videos.list` data for the fake YouTube API: id -> details. */
 export interface FakeVideo {
   title?: string;
+  channelTitle?: string;
   durationSec: number;
   embeddable?: boolean;
+}
+
+/** A song in the fake Deezer catalog. */
+export interface FakeSong {
+  title: string;
+  artist: string;
+  album?: string;
+  durationSec: number;
+  readable?: boolean;
 }
 
 const isoDuration = (sec: number) =>
@@ -136,8 +148,43 @@ export async function createHarness(options: HarnessOptions = {}) {
   const searchCalls: string[] = [];
   /** Canned `playlistItems.list` data: playlist id -> video ids; an absent id answers 404. */
   const playlistPages = new Map<string, string[]>();
+  /** Fake Deezer: songs by id, `/search/track` answers (query -> ids), and the paths asked for. */
+  const catalogSongs = new Map<string, FakeSong>();
+  const catalogSearch = new Map<string, string[]>();
+  const catalogCalls: string[] = [];
+  /** Set to make Deezer answer with this error code (status 200, like the real one). */
+  const deezer: { errorCode: number | null } = { errorCode: null };
+  const deezerTrack = (id: string, song: FakeSong) => ({
+    id: Number(id),
+    readable: song.readable ?? true,
+    title: song.title,
+    duration: song.durationSec,
+    artist: { name: song.artist },
+    album: {
+      title: song.album ?? `${song.title} (Single)`,
+      cover_medium: `https://cdn-images.dzcdn.net/images/cover/${id}/250x250.jpg`,
+    },
+  });
   const fakeFetch = (async (input: URL | string) => {
     const url = new URL(input);
+    if (url.hostname === 'api.deezer.com') {
+      catalogCalls.push(`${url.pathname}${url.search}`);
+      if (deezer.errorCode !== null) {
+        return Response.json({ error: { code: deezer.errorCode, message: 'Deezer error' } });
+      }
+      if (url.pathname === '/search/track') {
+        const ids = catalogSearch.get(url.searchParams.get('q') ?? '') ?? [];
+        return Response.json({
+          data: ids.flatMap((id) => {
+            const song = catalogSongs.get(id);
+            return song ? [deezerTrack(id, song)] : [];
+          }),
+        });
+      }
+      const id = url.pathname.replace('/track/', '');
+      const song = catalogSongs.get(id);
+      return Response.json(song ? deezerTrack(id, song) : { error: { code: 800 } });
+    }
     if (url.pathname.endsWith('/playlistItems')) {
       const all = playlistPages.get(url.searchParams.get('playlistId') ?? '');
       if (!all) return new Response('{}', { status: 404 });
@@ -164,7 +211,7 @@ export async function createHarness(options: HarnessOptions = {}) {
               id,
               snippet: {
                 title: v.title ?? `Track ${id}`,
-                channelTitle: 'Test Channel',
+                channelTitle: v.channelTitle ?? 'Test Channel',
                 thumbnails: { medium: { url: `https://i.ytimg.com/vi/${id}/mqdefault.jpg` } },
               },
               contentDetails: { duration: isoDuration(v.durationSec) },
@@ -185,7 +232,14 @@ export async function createHarness(options: HarnessOptions = {}) {
     ),
     fetch: fakeFetch,
   });
-  const search = createSearchService({ redis, settings, quota: quotaStore, youtube });
+  const search = createSearchService({
+    redis,
+    settings,
+    quota: quotaStore,
+    youtube,
+    catalog: createCatalogService({ redis, settings, fetch: fakeFetch }),
+    matches: createCatalogMatchStore(db),
+  });
   const playback = createPlaybackService({
     store: playbackStore,
     queue: createQueueStore(db),
@@ -353,6 +407,11 @@ export async function createHarness(options: HarnessOptions = {}) {
     youtubeCalls,
     searchResults,
     searchCalls,
+    catalogSongs,
+    catalogSearch,
+    catalogCalls,
+    deezer,
+    youtube,
     quota: quotaStore,
     guest,
     admin,

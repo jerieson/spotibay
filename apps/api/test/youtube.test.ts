@@ -123,7 +123,10 @@ describe('YouTube service', () => {
       apiKey: 'apiKey' in opts ? opts.apiKey : 'k',
       tracks: {
         findMany: async (ids) => ids.flatMap((id) => stored.get(id) ?? []),
-        upsertMany: async (rows) => rows.forEach((r) => stored.set(r.videoId, r)),
+        upsertMany: async (rows) => {
+          rows.forEach((r) => stored.set(r.videoId, r));
+          return rows;
+        },
       },
       quota: {
         add: async (d, u, s) => void quota.push([d, u, s]),
@@ -259,7 +262,7 @@ describe('getPlaylistVideoIds', () => {
       apiKey: 'k',
       tracks: {
         findMany: async () => [],
-        upsertMany: async () => undefined,
+        upsertMany: async (rows) => rows,
       },
       quota: {
         add: async (d, u, s) => void quota.push([d, u, s]),

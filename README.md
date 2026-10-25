@@ -8,7 +8,7 @@ Spotibay is a small web app for listening parties. Open a room, share the link, 
 
 - **Jump straight in.** No sign-up and no email. You get a random name and avatar, and you can change both.
 - **Start a room.** Public rooms show up on the home page. Private rooms are invite-only and can have a password.
-- **Build the queue together.** Paste a YouTube link or search for a song, vote tracks up or down, and vote to skip.
+- **Build the queue together.** Paste a YouTube link or search for a song (suggestions with album art appear as you type), vote tracks up or down, and vote to skip.
 - **Take turns.** Fair mode rotates between everyone who added songs, and the host can make friends DJs.
 - **Chat and react.** Talk in the room chat and send emoji reactions that float over the player.
 - **Keep your music.** Save playlists and liked songs, look back at what you listened to, import a YouTube playlist, and share playlists with a link.

@@ -11,9 +11,12 @@ import {
   recoveryCodeResponseSchema,
   roomHistoryResponseSchema,
   roomListResponseSchema,
+  resolveResponseSchema,
   roomResponseSchema,
   searchResponseSchema,
   sessionResponseSchema,
+  suggestResponseSchema,
+  type CatalogTrack,
   type CreateRoomBody,
   type HealthResponse,
   type HistoryEntry,
@@ -24,6 +27,7 @@ import {
   type SharedPlaylist,
   type Track,
   type UpdatePlaylistBody,
+  type ResolveResponse,
   type RoomSummary,
   type SearchResponse,
   type SessionResponse,
@@ -109,6 +113,21 @@ export async function fetchRoom(code: string): Promise<RoomSummary> {
 
 export function searchTracks(q: string): Promise<SearchResponse> {
   return request(searchResponseSchema, `/api/search?q=${encodeURIComponent(q)}`);
+}
+
+export async function suggestTracks(q: string): Promise<CatalogTrack[]> {
+  const res = await request(
+    suggestResponseSchema,
+    `/api/search/suggest?q=${encodeURIComponent(q)}`,
+  );
+  return res.suggestions;
+}
+
+export function resolveTrack(catalogId: string): Promise<ResolveResponse> {
+  return request(resolveResponseSchema, '/api/search/resolve', {
+    method: 'POST',
+    body: { catalogId },
+  });
 }
 
 export async function fetchRoomHistory(code: string): Promise<HistoryEntry[]> {

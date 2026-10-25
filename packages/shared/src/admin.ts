@@ -19,11 +19,15 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'features.publicRooms': 'Allow public rooms and list them on the home page.',
   'features.playlistImport': 'Allow importing YouTube playlists into the library.',
   'features.search': 'Allow YouTube search. Pasting a link still works when off.',
+  'features.catalogSearch':
+    'Suggest songs from the Deezer catalog while typing. Off: search goes straight to YouTube.',
   'limits.maxActiveRooms': 'Open rooms allowed at the same time.',
   'limits.maxUsersPerRoom': 'People allowed in one room.',
   'limits.maxQueueItemsPerUser': 'Tracks one person can have in a room queue at once.',
   'limits.maxQueueLength': 'Tracks allowed in one room queue.',
-  'limits.searchesPerUserPerDay': 'YouTube searches per person per day (Pacific Time).',
+  'limits.searchesPerUserPerDay':
+    'YouTube searches per person per day (Pacific Time). Adding a suggested song nobody has added before uses one.',
+  'limits.suggestionsPerMinute': 'Song suggestion requests one address can make per minute.',
   'limits.videoLookupsPerUserPerDay':
     'YouTube lookups of videos new to the app one person can cause per day. Each covers up to 50 videos and costs 1 quota unit.',
   'limits.maxTrackDurationSec': 'Longest track that can be queued, in seconds.',
@@ -40,6 +44,7 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'search.cacheTtlSec': 'How long search results are cached, in seconds.',
   'search.dailySearchCallBudget':
     'YouTube search calls allowed per day. Each costs 100 quota units of the 10,000 default.',
+  'catalog.cacheTtlSec': 'How long song suggestions are cached, in seconds.',
   'moderation.wordFilter': 'Words masked in chat, one per line.',
   'site.maintenanceMode': 'Show a maintenance page and refuse everyone except admins.',
   'site.announcement': 'A banner shown to everyone. Leave empty for none.',

@@ -21,7 +21,13 @@ import { createPlaylistService } from './services/playlists.js';
 import { createPresence } from './services/presence.js';
 import { createPlaybackService } from './services/playback.js';
 import { createPlaybackStore } from './services/playback-store.js';
-import { createQueueStore, createQuotaStore, createTrackStore } from './services/queue-store.js';
+import { createCatalogService } from './services/catalog.js';
+import {
+  createCatalogMatchStore,
+  createQueueStore,
+  createQuotaStore,
+  createTrackStore,
+} from './services/queue-store.js';
 import { createRoomLifecycle } from './services/room-lifecycle.js';
 import { createRoomService } from './services/rooms.js';
 import { createSearchService } from './services/search.js';
@@ -59,7 +65,14 @@ const youtube = createYouTubeService({
   quota: quotaStore,
   chargeLookup: createLookupCharger(redis, () => settings.get('limits.videoLookupsPerUserPerDay')),
 });
-const search = createSearchService({ redis, settings, quota: quotaStore, youtube });
+const search = createSearchService({
+  redis,
+  settings,
+  quota: quotaStore,
+  youtube,
+  catalog: createCatalogService({ redis, settings }),
+  matches: createCatalogMatchStore(db),
+});
 const playback = createPlaybackService({
   store: playbackStore,
   queue: createQueueStore(db),

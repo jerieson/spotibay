@@ -29,7 +29,8 @@ export interface StoredTrack extends Track {
 
 export interface TrackStore {
   findMany(videoIds: string[]): Promise<StoredTrack[]>;
-  upsertMany(tracks: StoredTrack[]): Promise<void>;
+  /** Saves YouTube's details and resolves with the rows as stored, which keep catalog metadata. */
+  upsertMany(tracks: StoredTrack[]): Promise<StoredTrack[]>;
 }
 
 export interface QuotaStore {
@@ -247,9 +248,8 @@ export function createYouTubeService({
     const toFetch = ids.filter((id) => !result.has(id) && !knownMissing(id));
     for (let i = 0; i < toFetch.length; i += VIDEOS_BATCH) {
       const batch = toFetch.slice(i, i + VIDEOS_BATCH);
-      const fetched = await fetchVideos(batch, userId);
-      await tracks.upsertMany(fetched);
-      for (const track of fetched) result.set(track.videoId, track);
+      const stored = await tracks.upsertMany(await fetchVideos(batch, userId));
+      for (const track of stored) result.set(track.videoId, track);
       rememberMissing(batch.filter((id) => !result.has(id)));
     }
     return result;

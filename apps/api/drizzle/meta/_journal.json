@@ -15,6 +15,13 @@
       "when": 1792938136201,
       "tag": "0001_smart_galactus",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792955829048,
+      "tag": "0002_confused_ultimo",
+      "breakpoints": true
     }
   ]
 }
