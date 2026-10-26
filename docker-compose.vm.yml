@@ -37,6 +37,7 @@ services:
       REDIS_URL: redis://redis:6379
       APP_URL: ${APP_URL}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      KLIPY_API_KEY: ${KLIPY_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
       RECOVERY_HMAC_SECRET: ${RECOVERY_HMAC_SECRET:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}

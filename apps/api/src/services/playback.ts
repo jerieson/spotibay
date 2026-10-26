@@ -261,13 +261,6 @@ export function createPlaybackService({
     if (track.durationSec === 0) {
       throw new PlaybackError('track_rejected', 'Live streams cannot be added');
     }
-    const maxSec = settings.get('limits.maxTrackDurationSec');
-    if (track.durationSec > maxSec) {
-      throw new PlaybackError(
-        'track_rejected',
-        `Tracks can be at most ${Math.floor(maxSec / 60)} minutes long`,
-      );
-    }
 
     return withLock(roomId, async () => {
       const active = await queue.listActive(roomId);
@@ -416,7 +409,6 @@ export function createPlaybackService({
     const wanted = [...new Set(videoIds)];
     const found = await fetchTracks(wanted, userId);
     const failedHere = await store.unplayable(roomId, wanted);
-    const maxSec = settings.get('limits.maxTrackDurationSec');
     const result: AddManyResult = { added: 0, duplicates: 0, unplayable: 0, overLimit: 0 };
     return withLock(roomId, async () => {
       const active = await queue.listActive(roomId);
@@ -432,13 +424,7 @@ export function createPlaybackService({
       let startsNow = (await store.load(roomId)).status === 'idle';
       for (const videoId of wanted) {
         const track = found.get(videoId);
-        if (
-          !track ||
-          !track.embeddable ||
-          failedHere.has(videoId) ||
-          track.durationSec === 0 ||
-          track.durationSec > maxSec
-        ) {
+        if (!track || !track.embeddable || failedHere.has(videoId) || track.durationSec === 0) {
           result.unplayable += 1;
         } else if (inQueue.has(videoId)) {
           result.duplicates += 1;

@@ -1,4 +1,5 @@
 import {
+  gifSearchResponseSchema,
   healthResponseSchema,
   likesResponseSchema,
   listenHistoryResponseSchema,
@@ -17,6 +18,8 @@ import {
   sessionResponseSchema,
   suggestResponseSchema,
   type CatalogTrack,
+  type ChatMediaKind,
+  type GifSearchResponse,
   type CreateRoomBody,
   type HealthResponse,
   type HistoryEntry,
@@ -128,6 +131,15 @@ export function resolveTrack(catalogId: string): Promise<ResolveResponse> {
     method: 'POST',
     body: { catalogId },
   });
+}
+
+export function searchGifs(
+  kind: ChatMediaKind,
+  q: string,
+  page: number,
+): Promise<GifSearchResponse> {
+  const params = new URLSearchParams({ kind, q, page: String(page) });
+  return request(gifSearchResponseSchema, `/api/gifs/search?${params}`);
 }
 
 export async function fetchRoomHistory(code: string): Promise<HistoryEntry[]> {

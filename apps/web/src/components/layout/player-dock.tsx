@@ -41,7 +41,7 @@ export function PlayerDock() {
             {item
               ? item.track.channelTitle
               : inRoom
-                ? 'Paste a YouTube link to start'
+                ? 'Tap Add music to start'
                 : 'Join a room to start listening'}
           </p>
         </div>

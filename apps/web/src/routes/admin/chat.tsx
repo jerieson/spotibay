@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { adminApi } from './admin-api';
 import { Card, Empty, formatTime, PageHeader, QueryState } from './ui';
 
@@ -67,9 +68,25 @@ export function ChatPage() {
                 <span className="font-medium text-foreground">{m.userName}</span> in {m.roomName} (
                 {m.roomCode}) · {formatTime(m.createdAt)}
               </p>
-              <p className={m.deleted ? 'text-muted-foreground line-through' : 'break-words'}>
-                {m.body}
-              </p>
+              {m.body && (
+                <p className={m.deleted ? 'text-muted-foreground line-through' : 'break-words'}>
+                  {m.body}
+                </p>
+              )}
+              {m.media && (
+                <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                  <img
+                    src={m.media.previewUrl}
+                    alt={m.media.title}
+                    loading="lazy"
+                    className={cn('h-16 w-auto rounded-md', m.deleted && 'opacity-40 grayscale')}
+                  />
+                  <span>
+                    {m.media.kind === 'gif' ? 'GIF' : 'Sticker'}
+                    {m.media.title && `: ${m.media.title}`}
+                  </span>
+                </div>
+              )}
             </div>
             {!m.deleted && (
               <Button

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Heart, ListMusic } from 'lucide-react';
 import { MAX_BATCH_VIDEOS } from '@spotibay/shared';
+import { TrackText } from '@/components/track-text';
 import { Button } from '@/components/ui/button';
 import { useLikes } from '@/hooks/use-likes';
 import { fetchPlaylists } from '@/lib/api';
@@ -47,12 +48,10 @@ export function LibraryQueue({ onQueued }: { onQueued?: () => void }) {
         {playlists.data?.map((p) => (
           <li key={p.id} className="flex items-center gap-3 p-3">
             <ListMusic className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{p.name}</p>
-              <p className="text-sm text-muted-foreground">
-                {p.itemCount} {p.itemCount === 1 ? 'track' : 'tracks'}
-              </p>
-            </div>
+            <TrackText
+              title={p.name}
+              detail={`${p.itemCount} ${p.itemCount === 1 ? 'track' : 'tracks'}`}
+            />
             <Button
               size="sm"
               variant="secondary"

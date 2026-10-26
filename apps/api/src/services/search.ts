@@ -9,11 +9,10 @@ import {
   type Track,
 } from '@spotibay/shared';
 import { z } from 'zod';
+import { hit } from '../lib/rate-limit.js';
 import { CatalogError, pickMatch, type CatalogService } from './catalog.js';
 import type { SettingsService } from './settings.js';
 import { quotaDate, type QuotaStore, type StoredTrack } from './youtube.js';
-
-const USER_COUNT_TTL_SEC = 2 * 24 * 60 * 60;
 
 export class SearchError extends Error {
   constructor(
@@ -69,13 +68,6 @@ export function createSearchService({
   matches,
   now = () => new Date(),
 }: SearchServiceDeps) {
-  const countKey = (userId: string) => `searchcount:${userId}:${quotaDate(now())}`;
-
-  async function remainingFor(userId: string): Promise<number> {
-    const used = Number((await redis.get(countKey(userId))) ?? 0);
-    return Math.max(0, settings.get('limits.searchesPerUserPerDay') - used);
-  }
-
   async function search(userId: string, rawQuery: string): Promise<SearchResponse> {
     if (!settings.get('features.search')) {
       throw new SearchError('search_disabled', 'Search is turned off');
@@ -86,8 +78,7 @@ export function createSearchService({
     const cached = await redis.get(cacheKey);
     if (cached) {
       try {
-        const results = cachedResultsSchema.parse(JSON.parse(cached));
-        return { results, remainingSearchesToday: await remainingFor(userId) };
+        return { results: cachedResultsSchema.parse(JSON.parse(cached)) };
       } catch {
         // An unreadable entry is treated as a miss and overwritten below.
       }
@@ -97,26 +88,23 @@ export function createSearchService({
     if ((await quota.get(date)).searchCalls >= settings.get('search.dailySearchCallBudget')) {
       throw new SearchError('search_budget_exhausted', 'Search is used up for today');
     }
-    const limit = settings.get('limits.searchesPerUserPerDay');
-    const key = countKey(userId);
-    const used = await redis.incr(key);
-    await redis.expire(key, USER_COUNT_TTL_SEC);
-    if (used > limit) {
-      await redis.decr(key);
-      throw new SearchError('search_user_limit', "You've used all your searches for today");
+    // No daily cap per person; a burst limit keeps one person from using up the app's budget.
+    const key = `ratelimit:search:${userId}`;
+    if (!(await hit(redis, key, settings.get('limits.searchesPerMinute'), 60))) {
+      throw new SearchError('search_rate_limited', 'Slow down, try again in a minute');
     }
 
     let tracks: StoredTrack[];
     try {
       tracks = await youtube.search(query);
     } catch (err) {
-      // A search that never produced an answer shouldn't cost the user one.
+      // A search that never produced an answer shouldn't count against the user.
       await redis.decr(key);
       throw err;
     }
     const results = tracks.map(toTrack);
     await redis.set(cacheKey, JSON.stringify(results), 'EX', settings.get('search.cacheTtlSec'));
-    return { results, remainingSearchesToday: Math.max(0, limit - used) };
+    return { results };
   }
 
   function catalogError(err: unknown): never {
@@ -148,28 +136,19 @@ export function createSearchService({
     const known = await matches.find(catalogId);
     if (known) {
       const track = (await youtube.getVideos([known])).get(known);
-      if (track?.embeddable) {
-        return {
-          status: 'matched',
-          track: toTrack(track),
-          remainingSearchesToday: await remainingFor(userId),
-        };
-      }
+      if (track?.embeddable) return { status: 'matched', track: toTrack(track) };
       // The video went away or stopped allowing embeds: look for another one below.
     }
     const song = await catalog.getTrack(catalogId).catch(catalogError);
-    const { results, remainingSearchesToday } = await search(
-      userId,
-      `${song.artist} ${song.title}`,
-    );
+    const { results } = await search(userId, `${song.artist} ${song.title}`);
     const match = pickMatch(
       song,
       results.filter((r) => r.videoId !== known),
     );
-    if (!match) return { status: 'no_match', results, remainingSearchesToday };
+    if (!match) return { status: 'no_match', results };
     await matches.save(song, match.videoId);
     const track = (await youtube.getVideos([match.videoId])).get(match.videoId) ?? match;
-    return { status: 'matched', track: toTrack(track), remainingSearchesToday };
+    return { status: 'matched', track: toTrack(track) };
   }
 
   return { search, suggest, resolve };

@@ -226,6 +226,7 @@ export function createAdminDataStore(db: Db): AdminDataStore {
           userId: chatMessages.userId,
           userName: users.displayName,
           body: chatMessages.body,
+          media: chatMessages.media,
           createdAt: chatMessages.createdAt,
           deletedAt: chatMessages.deletedAt,
         })
@@ -241,8 +242,9 @@ export function createAdminDataStore(db: Db): AdminDataStore {
         )
         .orderBy(desc(chatMessages.createdAt))
         .limit(limit);
-      return rows.map(({ deletedAt, createdAt, ...r }) => ({
+      return rows.map(({ deletedAt, createdAt, media, ...r }) => ({
         ...r,
+        media: media ?? null,
         createdAt: createdAt.toISOString(),
         deleted: deletedAt !== null,
       }));

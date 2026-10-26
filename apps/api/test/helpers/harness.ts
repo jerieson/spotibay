@@ -43,6 +43,7 @@ import { createRoomLifecycle } from '../../src/services/room-lifecycle.js';
 import { createRoomService } from '../../src/services/rooms.js';
 import { createChatService } from '../../src/services/chat.js';
 import { createChatStore } from '../../src/services/chat-store.js';
+import { createGifService } from '../../src/services/gifs.js';
 import { createLibraryService } from '../../src/services/library.js';
 import { createPlaylistService } from '../../src/services/playlists.js';
 import { createSearchService } from '../../src/services/search.js';
@@ -97,6 +98,15 @@ export interface FakeSong {
   durationSec: number;
   readable?: boolean;
 }
+
+/** A GIF or sticker in the fake KLIPY. `host` overrides the media host (default static.klipy.com). */
+export interface FakeGif {
+  kind: 'gif' | 'sticker';
+  title: string;
+  host?: string;
+}
+
+export const KLIPY_TEST_KEY = 'klipy-test-key';
 
 const isoDuration = (sec: number) =>
   `PT${Math.floor(sec / 3600)}H${Math.floor((sec % 3600) / 60)}M${sec % 60}S`;
@@ -165,8 +175,45 @@ export async function createHarness(options: HarnessOptions = {}) {
       cover_medium: `https://cdn-images.dzcdn.net/images/cover/${id}/250x250.jpg`,
     },
   });
+  /** Fake KLIPY: items by slug, the paths asked for, and an optional forced HTTP status. */
+  const klipyItems = new Map<string, FakeGif>();
+  const klipyCalls: string[] = [];
+  const klipy: { status: number | null } = { status: null };
+  const klipyItem = (slug: string, gif: FakeGif) => {
+    const base = `https://${gif.host ?? 'static.klipy.com'}/${slug}`;
+    return {
+      id: slug.length,
+      slug,
+      title: gif.title,
+      type: gif.kind,
+      file: {
+        md: { webp: { url: `${base}/md.webp`, width: 220, height: 160, size: 1000 } },
+        sm: { webp: { url: `${base}/sm.webp`, width: 110, height: 80, size: 500 } },
+      },
+    };
+  };
+  const klipyAnswer = (url: URL) => {
+    klipyCalls.push(`${url.pathname}${url.search}`);
+    if (klipy.status !== null) return new Response('{}', { status: klipy.status });
+    const [, , , key, kinds, action] = url.pathname.split('/');
+    if (key !== KLIPY_TEST_KEY) return new Response('{}', { status: 401 });
+    const kind = kinds === 'stickers' ? 'sticker' : 'gif';
+    const q = url.searchParams.get('q') ?? '';
+    const slugs = url.searchParams.get('slugs')?.split(',');
+    const items = [...klipyItems]
+      .filter(([slug, gif]) => {
+        if (gif.kind !== kind) return false;
+        if (action === 'items') return slugs?.includes(slug) ?? false;
+        return action === 'trending' || gif.title.toLowerCase().includes(q);
+      })
+      .map(([slug, gif]) => klipyItem(slug, gif));
+    // Ads come mixed into real answers and must be skipped.
+    const data = [{ type: 'ad', content: '<div></div>', width: 300, height: 250 }, ...items];
+    return Response.json({ result: true, data: { data, current_page: 1, has_next: false } });
+  };
   const fakeFetch = (async (input: URL | string) => {
     const url = new URL(input);
+    if (url.hostname === 'api.klipy.com') return klipyAnswer(url);
     if (url.hostname === 'api.deezer.com') {
       catalogCalls.push(`${url.pathname}${url.search}`);
       if (deezer.errorCode !== null) {
@@ -248,7 +295,14 @@ export async function createHarness(options: HarnessOptions = {}) {
     rooms,
     settings,
   });
-  const chat = createChatService({ store: createChatStore(db), redis, settings });
+  const gifs = createGifService({ redis, settings, apiKey: KLIPY_TEST_KEY, fetch: fakeFetch });
+  const chat = createChatService({
+    store: createChatStore(db),
+    redis,
+    settings,
+    gifs,
+    members: (roomId) => presence.list(roomId),
+  });
   const playlists = createPlaylistService({ db, youtube, settings });
   const library = createLibraryService({ db });
   const lifecycle = createRoomLifecycle({
@@ -281,6 +335,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     presence,
     playback,
     search,
+    gifs,
     playlists,
     library,
     limits: options.rateLimits ? { redis, settings } : undefined,
@@ -411,6 +466,9 @@ export async function createHarness(options: HarnessOptions = {}) {
     catalogSearch,
     catalogCalls,
     deezer,
+    klipyItems,
+    klipyCalls,
+    klipy,
     youtube,
     quota: quotaStore,
     guest,

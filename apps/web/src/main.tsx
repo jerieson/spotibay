@@ -3,6 +3,7 @@ import { StrictMode, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AppShell } from '@/components/layout/app-shell';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { HomePage } from '@/routes/home';
 import { LibraryPage } from '@/routes/library';
 import { PlaylistPage } from '@/routes/playlist';
@@ -46,7 +47,9 @@ const router = createBrowserRouter([
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <TooltipProvider delayDuration={300}>
+        <RouterProvider router={router} />
+      </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

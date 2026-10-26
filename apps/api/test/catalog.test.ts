@@ -108,7 +108,7 @@ beforeEach(async () => {
   h.searchResults.set('nobody knows obscure song', ['someone0000']);
   await h.settings.set('features.catalogSearch', true, null);
   await h.settings.set('features.search', true, null);
-  await h.settings.set('limits.searchesPerUserPerDay', 10, null);
+  await h.settings.set('limits.searchesPerMinute', 5, null);
   await h.settings.set('search.dailySearchCallBudget', 95, null);
 });
 
@@ -186,7 +186,6 @@ describe('POST /api/search/resolve', () => {
         thumbnailUrl: 'https://cdn-images.dzcdn.net/images/cover/908604612/250x250.jpg',
         durationSec: 201,
       },
-      remainingSearchesToday: 9,
     });
     expect(h.searchCalls).toEqual(['the weeknd blinding lights']);
   });
@@ -198,7 +197,7 @@ describe('POST /api/search/resolve', () => {
     await h.redis.flushdb();
     const other = await h.guest();
     const res = await resolve(other, '908604612');
-    expect(res.body).toMatchObject({ status: 'matched', remainingSearchesToday: 10 });
+    expect(res.body).toMatchObject({ status: 'matched' });
     expect(h.searchCalls).toHaveLength(0);
     expect(h.youtubeCalls).toHaveLength(0);
   });
@@ -216,16 +215,20 @@ describe('POST /api/search/resolve', () => {
     expect(res.body).toMatchObject({
       status: 'no_match',
       results: [{ videoId: 'someone0000', title: 'Unrelated' }],
-      remainingSearchesToday: 9,
     });
     const rows = await h.db.execute('select 1 from catalog_matches');
     expect(rows.rowCount).toBe(0);
   });
 
-  it('uses the daily search limit for songs nobody has added', async () => {
-    await h.settings.set('limits.searchesPerUserPerDay', 0, null);
-    const res = await resolve(await h.guest(), '908604612');
+  it('uses the search burst limit only for songs nobody has added', async () => {
+    await h.settings.set('limits.searchesPerMinute', 1, null);
+    const g = await h.guest();
+    await g.api('GET', `/search?q=${encodeURIComponent('something else')}`);
+    const res = await resolve(g, '908604612');
     expect(res.status).toBe(429);
-    expect(res.body.error).toBe('search_user_limit');
+    expect(res.body.error).toBe('search_rate_limited');
+    // A song someone already matched is free even when the limit is spent.
+    await resolve(await h.guest(), '908604612');
+    expect((await resolve(g, '908604612')).body).toMatchObject({ status: 'matched' });
   });
 });

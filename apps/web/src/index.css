@@ -110,7 +110,25 @@
   animation: reaction-float 2.4s ease-out forwards;
 }
 
+/* The Add music button glows while a room has nothing to play. */
+@keyframes attention-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--volt) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in oklab, var(--volt) 0%, transparent);
+  }
+}
+
+.attention-glow {
+  animation: attention-glow 2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .attention-glow {
+    animation: none;
+  }
   .reaction-float {
     animation-name: reaction-fade;
   }

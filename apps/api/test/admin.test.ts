@@ -480,7 +480,7 @@ describe('maintenance mode and announcements', () => {
     expect((await guest.api('GET', '/me')).status).toBe(503);
     expect((await guest.api('GET', '/rooms')).body).toMatchObject({ error: 'maintenance' });
     const site = await fetch(`${h.baseUrl}/api/site`);
-    expect(await site.json()).toEqual({ maintenance: true, announcement: null });
+    expect(await site.json()).toEqual({ maintenance: true, announcement: null, gifs: true });
     expect((await fetch(`${h.baseUrl}/api/health`)).status).toBe(200);
     expect((await admin.api('GET', '/settings')).status).toBe(200);
 

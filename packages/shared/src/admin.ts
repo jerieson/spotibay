@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { chatMediaSchema } from './chat.js';
 import { avatarSchema } from './identity.js';
 import { memberSchema, nowPlayingSchema, roomVisibilitySchema } from './rooms.js';
 import { queueItemSchema, playbackStateSchema, queueModeSchema } from './playback.js';
@@ -21,16 +22,18 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'features.search': 'Allow YouTube search. Pasting a link still works when off.',
   'features.catalogSearch':
     'Suggest songs from the Deezer catalog while typing. Off: search goes straight to YouTube.',
+  'features.gifs':
+    'Let people send GIFs and stickers in chat (from KLIPY). Needs KLIPY_API_KEY on the server.',
   'limits.maxActiveRooms': 'Open rooms allowed at the same time.',
   'limits.maxUsersPerRoom': 'People allowed in one room.',
   'limits.maxQueueItemsPerUser': 'Tracks one person can have in a room queue at once.',
   'limits.maxQueueLength': 'Tracks allowed in one room queue.',
-  'limits.searchesPerUserPerDay':
-    'YouTube searches per person per day (Pacific Time). Adding a suggested song nobody has added before uses one.',
+  'limits.searchesPerMinute':
+    'YouTube searches one person can run per minute. Cached searches and songs someone already added are free.',
   'limits.suggestionsPerMinute': 'Song suggestion requests one address can make per minute.',
+  'limits.gifSearchesPerMinute': 'GIF and sticker searches one person can run per minute.',
   'limits.videoLookupsPerUserPerDay':
     'YouTube lookups of videos new to the app one person can cause per day. Each covers up to 50 videos and costs 1 quota unit.',
-  'limits.maxTrackDurationSec': 'Longest track that can be queued, in seconds.',
   'limits.maxPlaylistImportItems': 'Most tracks imported from one YouTube playlist.',
   'limits.chatMessageMaxLength': 'Longest chat message, in characters.',
   'limits.chatMessagesPerMinute': 'Chat messages one person can send per minute.',
@@ -45,6 +48,9 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'search.dailySearchCallBudget':
     'YouTube search calls allowed per day. Each costs 100 quota units of the 10,000 default.',
   'catalog.cacheTtlSec': 'How long song suggestions are cached, in seconds.',
+  'gifs.cacheTtlSec': 'How long GIF and sticker search results are cached, in seconds.',
+  'gifs.contentFilter':
+    'How strictly KLIPY filters GIFs and stickers: off, low, medium or high (strictest).',
   'moderation.wordFilter': 'Words masked in chat, one per line.',
   'site.maintenanceMode': 'Show a maintenance page and refuse everyone except admins.',
   'site.announcement': 'A banner shown to everyone. Leave empty for none.',
@@ -58,6 +64,7 @@ export const publicSettingKeys = [
   'features.publicRooms',
   'features.playlistImport',
   'features.search',
+  'features.gifs',
   'limits.chatMessageMaxLength',
   'site.maintenanceMode',
   'site.announcement',
@@ -89,6 +96,8 @@ export const adminSettingUpdateBodySchema = z.object({ value: z.unknown() });
 export const siteResponseSchema = z.object({
   maintenance: z.boolean(),
   announcement: announcementSchema.nullable(),
+  /** GIFs and stickers are switched on and the server has a provider key. */
+  gifs: z.boolean(),
 });
 export type SiteResponse = z.infer<typeof siteResponseSchema>;
 
@@ -179,6 +188,7 @@ export const adminChatMessageSchema = z.object({
   userId: z.string(),
   userName: z.string(),
   body: z.string(),
+  media: chatMediaSchema.nullable(),
   createdAt: z.string(),
   deleted: z.boolean(),
 });

@@ -430,7 +430,8 @@ describe('queue:addMany', () => {
 
   it('counts unplayable tracks', async () => {
     h.videos.set(vid(2), { durationSec: 300, embeddable: false });
-    h.videos.set(vid(3), { durationSec: 99_999 });
+    // Live streams have no duration.
+    h.videos.set(vid(3), { durationSec: 0 });
     const { hostSocket } = await setupRoom();
     const res = result(hostSocket);
     hostSocket.emit('queue:addMany', { videoIds: [vid(1), vid(2), vid(3), 'zzzzzzzzzzz'] });

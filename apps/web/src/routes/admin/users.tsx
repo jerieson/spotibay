@@ -6,8 +6,15 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { adminApi } from './admin-api';
-import { Card, Empty, formatTime, PageHeader, QueryState, Select } from './ui';
+import { Card, Empty, formatTime, PageHeader, QueryState } from './ui';
 
 const durations = [
   { label: '1 hour', minutes: 60 },
@@ -120,19 +127,23 @@ function BanFields({
         onChange={(e) => setReason(e.target.value)}
       />
       <Select
-        aria-label="Duration"
         value={String(minutes)}
-        onChange={(e) => setMinutes(e.target.value === 'null' ? null : Number(e.target.value))}
+        onValueChange={(v) => setMinutes(v === 'null' ? null : Number(v))}
       >
-        {durations.map((d) => (
-          <option
-            key={d.label}
-            value={String(d.minutes)}
-            disabled={d.minutes !== null && d.minutes > MAX_BAN_MINUTES}
-          >
-            {d.label}
-          </option>
-        ))}
+        <SelectTrigger aria-label="Duration" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {durations.map((d) => (
+            <SelectItem
+              key={d.label}
+              value={String(d.minutes)}
+              disabled={d.minutes !== null && d.minutes > MAX_BAN_MINUTES}
+            >
+              {d.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
     </div>
   );

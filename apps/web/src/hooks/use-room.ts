@@ -88,11 +88,29 @@ export function useRoomConnection(code: string, asAdmin = false) {
       else if (r.added === 0) toast.error(`Nothing queued: ${left.join(', ')}`);
       else toast(`${base} (${left.join(', ')})`);
     };
-    const onChat: ServerToClientEvents['chat:message'] = (message) =>
-      useRoomStore.getState().addChat(message);
+    const onChat: ServerToClientEvents['chat:message'] = (message) => {
+      const store = useRoomStore.getState();
+      store.addChat(message);
+      const selfId = store.you?.userId;
+      if (
+        message.kind === 'user' &&
+        message.author.userId !== selfId &&
+        message.mentions.some((m) => m.userId === selfId) &&
+        (!store.chatOpen || document.hidden)
+      ) {
+        if (!store.chatOpen) store.addUnreadMention();
+        toast(`${message.author.displayName} mentioned you`, {
+          description: message.body || (message.media ? `Sent a ${message.media.kind}` : undefined),
+        });
+      }
+    };
     const onClosed = () => useRoomStore.getState().setStatus('closed');
     const onChatDeleted: ServerToClientEvents['chat:deleted'] = ({ id }) =>
       useRoomStore.getState().removeChat(id);
+    const onMessageReactions: ServerToClientEvents['chat:messageReactions'] = ({
+      messageId,
+      reactions,
+    }) => useRoomStore.getState().setMessageReactions(messageId, reactions);
     const onKicked: ServerToClientEvents['user:kicked'] = ({ reason }) => {
       toast.error(
         reason === 'banned' ? 'You have been banned.' : 'You were removed from the room.',
@@ -100,12 +118,15 @@ export function useRoomConnection(code: string, asAdmin = false) {
       void navigate('/');
     };
     const onSettings: ServerToClientEvents['settings:updated'] = ({ key }) => {
-      if (key === 'site.maintenanceMode') void queryClient.invalidateQueries({ queryKey: siteKey });
+      if (key === 'site.maintenanceMode' || key === 'features.gifs') {
+        void queryClient.invalidateQueries({ queryKey: siteKey });
+      }
     };
     const onAnnouncement: ServerToClientEvents['site:announcement'] = ({ announcement }) =>
       queryClient.setQueryData<SiteResponse>(siteKey, (site) => ({
         maintenance: site?.maintenance ?? false,
         announcement,
+        gifs: site?.gifs ?? false,
       }));
     const onError: ServerToClientEvents['error'] = (err) => toast.error(err.message);
 
@@ -121,6 +142,7 @@ export function useRoomConnection(code: string, asAdmin = false) {
     socket.on('chat:message', onChat);
     socket.on('room:closed', onClosed);
     socket.on('chat:deleted', onChatDeleted);
+    socket.on('chat:messageReactions', onMessageReactions);
     socket.on('user:kicked', onKicked);
     socket.on('settings:updated', onSettings);
     socket.on('site:announcement', onAnnouncement);
@@ -140,6 +162,7 @@ export function useRoomConnection(code: string, asAdmin = false) {
       socket.off('chat:message', onChat);
       socket.off('room:closed', onClosed);
       socket.off('chat:deleted', onChatDeleted);
+      socket.off('chat:messageReactions', onMessageReactions);
       socket.off('user:kicked', onKicked);
       socket.off('settings:updated', onSettings);
       socket.off('site:announcement', onAnnouncement);

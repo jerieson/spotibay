@@ -1,6 +1,9 @@
 import type { Redis } from 'ioredis';
-import { VIDEO_ID_PATTERN, type Track } from '@spotibay/shared';
+import { parseVideoId, VIDEO_ID_PATTERN, YOUTUBE_HOSTS, type Track } from '@spotibay/shared';
 import { z } from 'zod';
+
+/** Lives in shared so the web app can spot pasted links too. */
+export { parseVideoId };
 
 const VIDEOS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/videos';
 /** `videos.list` accepts at most 50 ids per call and costs 1 quota unit per call. */
@@ -52,31 +55,6 @@ export class YouTubeError extends Error {
   }
 }
 
-const HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com']);
-
-/** Extracts the 11-character video id from a YouTube link or a bare id; `null` if there is none. */
-export function parseVideoId(input: string): string | null {
-  const text = input.trim();
-  if (VIDEO_ID_PATTERN.test(text)) return text;
-  let url: URL;
-  try {
-    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
-  const host = url.hostname.toLowerCase();
-  const segments = url.pathname.split('/').filter(Boolean);
-  let candidate: string | null | undefined;
-  if (host === 'youtu.be') {
-    candidate = segments[0];
-  } else if (HOSTS.has(host)) {
-    if (segments[0] === 'watch') candidate = url.searchParams.get('v');
-    else if (segments[0] === 'shorts') candidate = segments[1];
-  }
-  return candidate && VIDEO_ID_PATTERN.test(candidate) ? candidate : null;
-}
-
 /** Extracts the playlist id from a YouTube link that has a `list` parameter; `null` if there is none. */
 export function parsePlaylistId(input: string): string | null {
   const text = input.trim();
@@ -87,7 +65,7 @@ export function parsePlaylistId(input: string): string | null {
     return null;
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
-  if (!HOSTS.has(url.hostname.toLowerCase())) return null;
+  if (!YOUTUBE_HOSTS.has(url.hostname.toLowerCase())) return null;
   const id = url.searchParams.get('list');
   return id && PLAYLIST_ID_PATTERN.test(id) ? id : null;
 }

@@ -29,7 +29,7 @@ beforeEach(async () => {
   h.videos.set(C, { title: 'Hidden', durationSec: 100, embeddable: false });
   h.searchResults.set('lo-fi beats', [A, B, C]);
   await h.settings.set('features.search', true, null);
-  await h.settings.set('limits.searchesPerUserPerDay', 10, null);
+  await h.settings.set('limits.searchesPerMinute', 5, null);
   await h.settings.set('search.dailySearchCallBudget', 95, null);
 });
 
@@ -51,19 +51,17 @@ describe('GET /api/search', () => {
     expect(res.status).toBe(200);
     expect(res.body.results.map((t) => t.videoId)).toEqual([A, B]);
     expect(res.body.results[0]).toMatchObject({ title: 'Alpha', durationSec: 200 });
-    expect(res.body.remainingSearchesToday).toBe(9);
     const rows = await h.db.execute('select video_id from tracks');
     expect(rows.rowCount).toBe(3);
   });
 
-  it('answers a repeated query from the cache without calling YouTube or using a search', async () => {
+  it('answers a repeated query from the cache without calling YouTube', async () => {
     const g = await h.guest();
     await search(g, 'lo-fi beats');
     const other = await h.guest();
     const again = await search(other, '  LO-FI   Beats ');
     expect(again.status).toBe(200);
     expect(again.body.results).toHaveLength(2);
-    expect(again.body.remainingSearchesToday).toBe(10);
     expect(h.searchCalls).toEqual(['lo-fi beats']);
   });
 
@@ -78,16 +76,33 @@ describe('GET /api/search', () => {
     expect(row).toMatchObject({ units: 101, searchCalls: 1 });
   });
 
-  it('enforces the per-user daily limit but still serves cached queries', async () => {
-    await h.settings.set('limits.searchesPerUserPerDay', 1, null);
+  it('limits uncached searches per minute but still serves cached queries', async () => {
+    await h.settings.set('limits.searchesPerMinute', 2, null);
     const g = await h.guest();
     h.searchResults.set('second', [A]);
-    expect((await search(g, 'lo-fi beats')).body.remainingSearchesToday).toBe(0);
-    const blocked = await search(g, 'second');
-    expect(blocked.status).toBe(429);
-    expect(blocked.body.error).toBe('search_user_limit');
-    expect(h.searchCalls).toEqual(['lo-fi beats']);
+    h.searchResults.set('third', [B]);
     expect((await search(g, 'lo-fi beats')).status).toBe(200);
+    // Cache hits are free.
+    expect((await search(g, 'lo-fi beats')).status).toBe(200);
+    expect((await search(g, 'second')).status).toBe(200);
+    const blocked = await search(g, 'third');
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error).toBe('search_rate_limited');
+    expect(h.searchCalls).toEqual(['lo-fi beats', 'second']);
+    expect((await search(g, 'second')).status).toBe(200);
+    // Another person has their own allowance.
+    expect((await search(await h.guest(), 'third')).status).toBe(200);
+  });
+
+  it('has no daily cap per person', async () => {
+    const g = await h.guest();
+    for (let i = 0; i < 12; i++) {
+      h.searchResults.set(`song ${i}`, [A]);
+      // Each minute's allowance is spent; start the next window.
+      if (i % 5 === 0) await h.redis.del(`ratelimit:search:${g.user.id}`);
+      expect((await search(g, `song ${i}`)).status).toBe(200);
+    }
+    expect(h.searchCalls).toHaveLength(12);
   });
 
   it('stops everyone once the global daily budget is spent', async () => {
@@ -100,8 +115,6 @@ describe('GET /api/search', () => {
     expect(blocked.status).toBe(429);
     expect(blocked.body.error).toBe('search_budget_exhausted');
     expect(h.searchCalls).toHaveLength(1);
-    // The refused user wasn't charged.
-    expect((await search(b, 'lo-fi beats')).body.remainingSearchesToday).toBe(10);
   });
 
   it('is refused when the search feature is off', async () => {

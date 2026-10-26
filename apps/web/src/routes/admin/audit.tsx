@@ -1,8 +1,50 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { adminApi } from './admin-api';
-import { Card, Empty, formatTime, PageHeader, QueryState, Select } from './ui';
+import { Card, Empty, formatTime, PageHeader, QueryState } from './ui';
+
+/** Radix Select reserves the empty string, so "no filter" needs its own value. */
+const ALL = '__all';
+
+function FilterSelect({
+  label,
+  allLabel,
+  options,
+  value,
+  onChange,
+  className,
+}: {
+  label: string;
+  allLabel: string;
+  options: readonly string[];
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <Select value={value || ALL} onValueChange={(v) => onChange(v === ALL ? '' : v)}>
+      <SelectTrigger aria-label={label} className={className}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL}>{allLabel}</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o} value={o}>
+            {o}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 const actions = [
   'settings.update',
@@ -35,28 +77,22 @@ export function AuditPage() {
     <>
       <PageHeader title="Audit Log" />
       <div className="mb-4 flex flex-wrap gap-2">
-        <Select
-          aria-label="Action"
-          className="w-48"
+        <FilterSelect
+          label="Action"
+          allLabel="All actions"
+          options={actions}
           value={action}
-          onChange={(e) => setAction(e.target.value)}
-        >
-          <option value="">All actions</option>
-          {actions.map((a) => (
-            <option key={a}>{a}</option>
-          ))}
-        </Select>
-        <Select
-          aria-label="Target type"
-          className="w-40"
+          onChange={setAction}
+          className="w-48"
+        />
+        <FilterSelect
+          label="Target type"
+          allLabel="All targets"
+          options={targetTypes}
           value={targetType}
-          onChange={(e) => setTargetType(e.target.value)}
-        >
-          <option value="">All targets</option>
-          {targetTypes.map((t) => (
-            <option key={t}>{t}</option>
-          ))}
-        </Select>
+          onChange={setTargetType}
+          className="w-40"
+        />
       </div>
       <QueryState isPending={log.isPending} error={log.error} />
       {log.data && entries.length === 0 && <Empty>Nothing recorded yet.</Empty>}

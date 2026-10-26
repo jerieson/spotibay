@@ -2,6 +2,7 @@ import { Pause, Play, RefreshCw, SkipForward, ThumbsDown, Volume2 } from 'lucide
 import { useEffect, useRef, useState } from 'react';
 import { expectedPositionMs } from '@spotibay/shared';
 import { LikeButton } from '@/components/library/like-button';
+import { ReactionBar } from '@/components/room/reaction-bar';
 import { ReactionLayer } from '@/components/room/reaction-layer';
 import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
@@ -98,7 +99,7 @@ export function PlayerPanel() {
         )}
         {!error && joined && !item && (
           <div className="absolute inset-0 grid place-items-center bg-background p-4 text-center text-sm text-muted-foreground">
-            Nothing playing. Paste a YouTube link below to start.
+            Nothing playing. Tap Add music to start.
           </div>
         )}
       </div>
@@ -206,7 +207,7 @@ export function PlayerPanel() {
           </div>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Volume2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <Slider
             min={1}
@@ -214,12 +215,13 @@ export function PlayerPanel() {
             value={[volume]}
             onValueChange={([v]) => setVolume(v ?? 1)}
             aria-label="Volume (only for you)"
-            className="w-32"
+            className="min-w-16 flex-1 sm:w-24 sm:flex-none lg:w-28"
           />
+          <ReactionBar />
           <Button
             variant="secondary"
             size="sm"
-            className="ml-auto"
+            className="shrink-0"
             onClick={sync.resync}
             disabled={!joined || !item}
           >

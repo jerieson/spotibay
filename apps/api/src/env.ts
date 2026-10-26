@@ -14,6 +14,8 @@ const envSchema = z.object({
   /** Unset keeps the admin panel switched off. From: pnpm --filter api hash-password <password> */
   ADMIN_PASSWORD_HASH: unsetIfEmpty(z.string().min(1)),
   YOUTUBE_API_KEY: z.string().optional(),
+  /** GIFs and stickers in chat (partner.klipy.com). Unset hides the picker. */
+  KLIPY_API_KEY: unsetIfEmpty(z.string().min(1)),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
   /** The public URL; when set, browser requests from any other origin are refused. */

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ChatReaction } from '@spotibay/shared';
+import { ReactionEmoji } from '@/components/reaction-emoji';
 import { socket } from '@/lib/socket';
 
 /** Horizontal spot (percent) derived from the reaction id, so every client shows it in the same place. */
@@ -27,11 +28,11 @@ export function ReactionLayer() {
       {reactions.map((r) => (
         <span
           key={r.id}
-          className="reaction-float absolute bottom-2 text-3xl"
+          className="reaction-float absolute bottom-2"
           style={{ left: `${lane(r.id)}%` }}
           onAnimationEnd={() => setReactions((prev) => prev.filter((x) => x.id !== r.id))}
         >
-          {r.emoji}
+          <ReactionEmoji emoji={r.emoji} animated className="size-10 drop-shadow-lg" />
         </span>
       ))}
     </div>

@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import {
-  chatBodySchema,
+  chatSendSchema,
   reactionEmojiSchema,
   type ChatMessage,
   type ChatReaction,
+  type MessageReaction,
 } from './chat.js';
 import {
   MAX_QUEUE_URL_LENGTH,
@@ -100,8 +101,10 @@ export const clientEventSchemas = {
     value: voteValueSchema.or(z.literal(0)),
   }),
   /** Length is capped by `limits.chatMessageMaxLength`, which is a setting, so the service checks it. */
-  'chat:send': z.object({ body: chatBodySchema }),
+  'chat:send': chatSendSchema,
   'chat:react': z.object({ emoji: reactionEmojiSchema }),
+  /** Adds the emoji to a message, or takes it back if the sender already added it. */
+  'chat:reactMessage': z.object({ messageId: z.uuid(), emoji: reactionEmojiSchema }),
 } as const;
 
 export type ClientEventPayloads = {
@@ -133,6 +136,7 @@ export interface ClientToServerEvents {
   'queue:vote': (payload: ClientEventPayloads['queue:vote']) => void;
   'chat:send': (payload: ClientEventPayloads['chat:send']) => void;
   'chat:react': (payload: ClientEventPayloads['chat:react']) => void;
+  'chat:reactMessage': (payload: ClientEventPayloads['chat:reactMessage']) => void;
 }
 
 export interface ServerToClientEvents {
@@ -147,6 +151,7 @@ export interface ServerToClientEvents {
   'queue:addManyResult': (result: AddManyResult) => void;
   'chat:message': (message: ChatMessage) => void;
   'chat:deleted': (payload: { id: string }) => void;
+  'chat:messageReactions': (payload: { messageId: string; reactions: MessageReaction[] }) => void;
   'settings:updated': (payload: SettingsUpdate) => void;
   'site:announcement': (payload: { announcement: Announcement | null }) => void;
   /** Sent on the `/admin` namespace only. */

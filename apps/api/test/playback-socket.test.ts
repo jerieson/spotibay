@@ -23,7 +23,6 @@ beforeEach(async () => {
   h.youtubeCalls.length = 0;
   // Tracks are cached for a day, so tests that reuse an id with a new duration need a clean table.
   await h.db.execute('truncate table tracks cascade');
-  await h.settings.set('limits.maxTrackDurationSec', 900, null);
   await h.settings.set('limits.maxQueueItemsPerUser', 5, null);
   await h.settings.set('limits.maxQueueLength', 200, null);
 });
@@ -99,18 +98,16 @@ describe('adding tracks by link', () => {
     expect((await err).code).toBe(code);
   });
 
-  it('rejects over-long, live and non-embeddable videos', async () => {
-    h.videos.set(A, { durationSec: 901 });
+  it('rejects live and non-embeddable videos but accepts long mixes', async () => {
+    h.videos.set(A, { durationSec: 3 * 60 * 60 });
     h.videos.set(B, { durationSec: 0 });
     h.videos.set(C, { durationSec: 60, embeddable: false });
     const { hostSocket } = await setupRoom();
-    for (const id of [A, B, C]) {
+    for (const id of [B, C]) {
       const err = next(hostSocket, 'error');
       hostSocket.emit('queue:add', { url: url(id) });
       expect((await err).code).toBe('track_rejected');
     }
-    await h.settings.set('limits.maxTrackDurationSec', 1000, null);
-    h.videos.set(A, { durationSec: 901 });
     const ok = playbackWith(hostSocket, (s) => s.status === 'playing');
     hostSocket.emit('queue:add', { url: url(A) });
     await ok;

@@ -1,6 +1,19 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { ChatMessage, ChatReaction, RoomResponse, SocketError } from '@spotibay/shared';
-import { createHarness, joinRoom, next, sleep, type Harness } from './helpers/harness.js';
+import type {
+  ChatMessage,
+  ChatReaction,
+  ChatSend,
+  RoomResponse,
+  SocketError,
+} from '@spotibay/shared';
+import {
+  createHarness,
+  joinRoom,
+  next,
+  sleep,
+  type ClientSocket,
+  type Harness,
+} from './helpers/harness.js';
 import { maskFilteredWords } from '../src/lib/word-filter.js';
 
 let h: Harness;
@@ -181,6 +194,183 @@ describe('reactions', () => {
     const err = next(hostSocket, 'error');
     hostSocket.emit('chat:react', { emoji: '🔥' });
     expect((await err).code).toBe('feature_disabled');
+  });
+});
+
+describe('chat replies, mentions and media', () => {
+  beforeEach(async () => {
+    await h.settings.set('features.gifs', true, null);
+    h.klipyItems.clear();
+    h.klipy.status = null;
+    h.klipyItems.set('party-cat-1', { kind: 'gif', title: 'Party cat' });
+    h.klipyItems.set('thumbs-up-2', { kind: 'sticker', title: 'Thumbs up' });
+    h.klipyItems.set('elsewhere-3', { kind: 'gif', title: 'Elsewhere', host: 'evil.example' });
+  });
+
+  async function say(socket: ClientSocket, payload: ChatSend, from: ClientSocket = socket) {
+    const seen = next(from, 'chat:message', (m) => m.kind === 'user' && m.body === payload.body);
+    socket.emit('chat:send', payload);
+    return user(await seen)!;
+  }
+
+  it('replies quote the original, and history keeps the quote', async () => {
+    const { hostSocket, friendSocket, code, host } = await setup();
+    const original = await say(hostSocket, { body: 'who wants lofi?' });
+    const reply = await say(friendSocket, { body: 'me!', replyToId: original.id }, hostSocket);
+    expect(reply.replyTo).toEqual({
+      id: original.id,
+      authorName: host.user.displayName,
+      excerpt: 'who wants lofi?',
+      media: null,
+      deleted: false,
+    });
+    const { state } = await joinRoom(await (await h.guest()).socket(), code);
+    const stored = state!.chat.map(user).find((m) => m?.id === reply.id);
+    expect(stored?.replyTo?.id).toBe(original.id);
+  });
+
+  it('shows a removed original as deleted and refuses new replies to it', async () => {
+    const { hostSocket, friendSocket, code } = await setup();
+    const original = await say(hostSocket, { body: 'oops' });
+    const reply = await say(friendSocket, { body: 'lol', replyToId: original.id }, hostSocket);
+    await h.db.execute(`update chat_messages set deleted_at = now() where id = '${original.id}'`);
+    const { state } = await joinRoom(await (await h.guest()).socket(), code);
+    expect(state!.chat.map(user).find((m) => m?.id === reply.id)?.replyTo).toMatchObject({
+      deleted: true,
+      excerpt: '',
+    });
+    const err = next(friendSocket, 'error');
+    friendSocket.emit('chat:send', { body: 'again', replyToId: original.id });
+    expect((await err).code).toBe('invalid_payload');
+  });
+
+  it('refuses replies to a message from another room', async () => {
+    const { hostSocket } = await setup();
+    const other = await setup();
+    const elsewhere = await say(other.hostSocket, { body: 'other room' });
+    const err = next(hostSocket, 'error');
+    hostSocket.emit('chat:send', { body: 'sneaky', replyToId: elsewhere.id });
+    expect((await err).code).toBe('invalid_payload');
+  });
+
+  it('keeps only mentions of people in the room whose name is in the text', async () => {
+    const { hostSocket, friendSocket, friend, host } = await setup();
+    const outsider = await h.guest();
+    const msg = await say(
+      hostSocket,
+      {
+        body: `hey @${friend.user.displayName} and @${outsider.user.displayName}`,
+        mentionIds: [friend.user.id, outsider.user.id, host.user.id],
+      },
+      friendSocket,
+    );
+    expect(msg.mentions).toEqual([
+      { userId: friend.user.id, displayName: friend.user.displayName },
+    ]);
+  });
+
+  it('sends GIFs and stickers with the server copy of the media', async () => {
+    const { hostSocket, friendSocket } = await setup();
+    const gif = await say(
+      friendSocket,
+      { body: '', media: { kind: 'gif', id: 'party-cat-1' } },
+      hostSocket,
+    );
+    expect(gif.media).toEqual({
+      kind: 'gif',
+      id: 'party-cat-1',
+      title: 'Party cat',
+      url: 'https://static.klipy.com/party-cat-1/md.webp',
+      previewUrl: 'https://static.klipy.com/party-cat-1/sm.webp',
+      width: 220,
+      height: 160,
+    });
+    const sticker = await say(
+      friendSocket,
+      { body: 'nice', media: { kind: 'sticker', id: 'thumbs-up-2' } },
+      hostSocket,
+    );
+    expect(sticker.media?.kind).toBe('sticker');
+    const reply = await say(hostSocket, { body: 'ha', replyToId: gif.id });
+    expect(reply.replyTo).toMatchObject({ excerpt: '', media: 'gif' });
+  });
+
+  it('refuses unknown media, media from other hosts and media while GIFs are off', async () => {
+    const { friendSocket } = await setup();
+    for (const id of ['nope-0', 'elsewhere-3']) {
+      const err = next(friendSocket, 'error');
+      friendSocket.emit('chat:send', { body: '', media: { kind: 'gif', id } });
+      expect((await err).code).toBe('invalid_payload');
+    }
+    const wrongKind = next(friendSocket, 'error');
+    friendSocket.emit('chat:send', { body: '', media: { kind: 'sticker', id: 'party-cat-1' } });
+    expect((await wrongKind).code).toBe('invalid_payload');
+    const badId = next(friendSocket, 'error');
+    friendSocket.emit('chat:send', {
+      body: '',
+      media: { kind: 'gif', id: '../https://evil.example/x.gif' },
+    });
+    expect((await badId).code).toBe('invalid_payload');
+    await h.settings.set('features.gifs', false, null);
+    const off = next(friendSocket, 'error');
+    friendSocket.emit('chat:send', { body: '', media: { kind: 'gif', id: 'party-cat-1' } });
+    expect((await off).code).toBe('feature_disabled');
+  });
+});
+
+describe('message reactions', () => {
+  it('toggles an emoji on a message for everyone, and history keeps it', async () => {
+    const { hostSocket, friendSocket, host, friend, code } = await setup();
+    const seen = next(hostSocket, 'chat:message', isUser('drop incoming'));
+    hostSocket.emit('chat:send', { body: 'drop incoming' });
+    const message = user(await seen)!;
+    expect(message.reactions).toEqual([]);
+
+    const first = next(hostSocket, 'chat:messageReactions');
+    friendSocket.emit('chat:reactMessage', { messageId: message.id, emoji: '🔥' });
+    expect(await first).toEqual({
+      messageId: message.id,
+      reactions: [{ emoji: '🔥', userIds: [friend.user.id] }],
+    });
+    const count = (n: number) => (p: { reactions: { userIds: string[] }[] }) =>
+      (p.reactions[0]?.userIds.length ?? 0) === n;
+    const second = next(friendSocket, 'chat:messageReactions', count(2));
+    hostSocket.emit('chat:reactMessage', { messageId: message.id, emoji: '🔥' });
+    expect((await second).reactions).toEqual([
+      { emoji: '🔥', userIds: [friend.user.id, host.user.id] },
+    ]);
+
+    const { state } = await joinRoom(await (await h.guest()).socket(), code);
+    expect(state!.chat.map(user).find((m) => m?.id === message.id)?.reactions).toEqual([
+      { emoji: '🔥', userIds: [friend.user.id, host.user.id] },
+    ]);
+
+    const undone = next(hostSocket, 'chat:messageReactions', count(1));
+    friendSocket.emit('chat:reactMessage', { messageId: message.id, emoji: '🔥' });
+    expect((await undone).reactions).toEqual([{ emoji: '🔥', userIds: [host.user.id] }]);
+  });
+
+  it('refuses unknown emojis, other rooms and removed messages', async () => {
+    const { hostSocket, friendSocket } = await setup();
+    const other = await setup();
+    const seen = next(other.hostSocket, 'chat:message', isUser('elsewhere'));
+    other.hostSocket.emit('chat:send', { body: 'elsewhere' });
+    const elsewhere = user(await seen)!;
+
+    const badEmoji = next(friendSocket, 'error');
+    friendSocket.emit('chat:reactMessage', { messageId: elsewhere.id, emoji: '💩' } as never);
+    expect((await badEmoji).code).toBe('invalid_payload');
+    const crossRoom = next(friendSocket, 'error');
+    friendSocket.emit('chat:reactMessage', { messageId: elsewhere.id, emoji: '👍' });
+    expect((await crossRoom).code).toBe('invalid_payload');
+
+    const mine = next(hostSocket, 'chat:message', isUser('oops'));
+    hostSocket.emit('chat:send', { body: 'oops' });
+    const removed = user(await mine)!;
+    await h.db.execute(`update chat_messages set deleted_at = now() where id = '${removed.id}'`);
+    const gone = next(friendSocket, 'error');
+    friendSocket.emit('chat:reactMessage', { messageId: removed.id, emoji: '👍' });
+    expect((await gone).code).toBe('invalid_payload');
   });
 });
 

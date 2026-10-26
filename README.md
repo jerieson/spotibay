@@ -26,8 +26,13 @@ A few things to know:
 - Some videos can't be played outside YouTube, so they are skipped.
 - Listeners without YouTube Premium may see ads, and they catch up when the ad ends.
 - Phones usually pause YouTube when the screen locks or the browser goes to the background.
-- Searches are limited per day, but pasting a link always works.
+- Song search is lightly rate limited, and pasting a link always works.
 
 ## About
 
 Spotibay is a personal, self-hosted project.
+
+## Credits
+
+- Reaction emoji: [Noto Emoji Animation](https://googlefonts.github.io/noto-emoji-animation/) by Google, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Resized for the web.
+- Song info: [Deezer](https://www.deezer.com). GIFs and stickers: [KLIPY](https://klipy.com).

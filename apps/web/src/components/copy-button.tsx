@@ -1,8 +1,20 @@
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Share2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
-export function CopyButton({ text, label }: { text: string; label: string }) {
+/** Copies `text`. With a `caption` it shows as a labelled button instead of a bare icon. */
+export function CopyButton({
+  text,
+  label,
+  caption,
+  className,
+}: {
+  text: string;
+  label: string;
+  caption?: string;
+  className?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -13,6 +25,22 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
     } catch {
       // Clipboard can be unavailable (insecure context, denied permission); the text stays selectable.
     }
+  }
+
+  if (caption) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        className={cn('rounded-full', className)}
+        // The visible caption is the name; the label explains what it does.
+        title={label}
+        onClick={copy}
+      >
+        {copied ? <Check className="text-volt-text" /> : <Share2 />}
+        <span aria-live="polite">{copied ? 'Link copied!' : caption}</span>
+      </Button>
+    );
   }
 
   return (

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export * from './admin.js';
 export * from './chat.js';
+export * from './gifs.js';
 export * from './identity.js';
 export * from './playback.js';
 export * from './playlists.js';
@@ -10,6 +11,7 @@ export * from './rooms.js';
 export * from './search.js';
 export * from './settings.js';
 export * from './socket-events.js';
+export * from './youtube-url.js';
 
 export const healthResponseSchema = z.object({
   status: z.enum(['ok', 'error']),

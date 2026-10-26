@@ -15,6 +15,7 @@ import {
 import { createAuditService } from './services/audit.js';
 import { createChatService } from './services/chat.js';
 import { createChatStore } from './services/chat-store.js';
+import { createGifService } from './services/gifs.js';
 import { createLibraryService } from './services/library.js';
 import { createIdentityService } from './services/identity.js';
 import { createPlaylistService } from './services/playlists.js';
@@ -81,7 +82,14 @@ const playback = createPlaybackService({
   rooms,
   settings,
 });
-const chat = createChatService({ store: createChatStore(db), redis, settings });
+const gifs = createGifService({ redis, settings, apiKey: env.KLIPY_API_KEY });
+const chat = createChatService({
+  store: createChatStore(db),
+  redis,
+  settings,
+  gifs,
+  members: (roomId) => presence.list(roomId),
+});
 const playlists = createPlaylistService({ db, youtube, settings });
 const library = createLibraryService({ db });
 const lifecycle = createRoomLifecycle({ rooms, presence });
@@ -114,6 +122,7 @@ const app = createApp({
   presence,
   playback,
   search,
+  gifs,
   playlists,
   library,
   admin: { auth: adminAuth, service: adminService, redis, settings },

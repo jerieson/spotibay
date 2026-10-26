@@ -3,6 +3,7 @@ import {
   idlePlayback,
   type ChatMessage,
   type Member,
+  type MessageReaction,
   type PlaybackState,
   type QueueItem,
   type Room,
@@ -28,6 +29,9 @@ interface RoomStoreState {
   queue: QueueItem[];
   skipVotes: SkipVotes;
   chat: ChatMessage[];
+  /** The chat tab is on screen; mentions elsewhere raise a badge instead. */
+  chatOpen: boolean;
+  unreadMentions: number;
   sync: SyncConfig;
   reset: () => void;
   setStatus: (status: RoomStatus, error?: SocketError | null) => void;
@@ -39,6 +43,9 @@ interface RoomStoreState {
   setSkipVotes: (skipVotes: SkipVotes) => void;
   addChat: (message: ChatMessage) => void;
   removeChat: (id: string) => void;
+  setMessageReactions: (messageId: string, reactions: MessageReaction[]) => void;
+  setChatOpen: (open: boolean) => void;
+  addUnreadMention: () => void;
 }
 
 const initial = {
@@ -51,6 +58,8 @@ const initial = {
   queue: [] as QueueItem[],
   skipVotes: { queueItemId: null, voters: [], needed: 1 } as SkipVotes,
   chat: [] as ChatMessage[],
+  chatOpen: true,
+  unreadMentions: 0,
   sync: { driftThresholdMs: 600, checkIntervalMs: 2000 } as SyncConfig,
 };
 
@@ -89,5 +98,27 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
         ? {}
         : { chat: [...s.chat, message].slice(-CHAT_CAP) },
     ),
-  removeChat: (id) => set((s) => ({ chat: s.chat.filter((m) => m.id !== id) })),
+  // Replies to a removed message keep their place but lose the quote.
+  removeChat: (id) =>
+    set((s) => ({
+      chat: s.chat.flatMap((m) => {
+        if (m.id === id) return [];
+        if (m.kind === 'user' && m.replyTo?.id === id && !m.replyTo.deleted) {
+          return [
+            {
+              ...m,
+              replyTo: { ...m.replyTo, authorName: null, excerpt: '', media: null, deleted: true },
+            },
+          ];
+        }
+        return [m];
+      }),
+    })),
+  setMessageReactions: (messageId, reactions) =>
+    set((s) => ({
+      chat: s.chat.map((m) => (m.kind === 'user' && m.id === messageId ? { ...m, reactions } : m)),
+    })),
+  setChatOpen: (chatOpen) =>
+    set((s) => ({ chatOpen, unreadMentions: chatOpen ? 0 : s.unreadMentions })),
+  addUnreadMention: () => set((s) => ({ unreadMentions: s.unreadMentions + 1 })),
 }));

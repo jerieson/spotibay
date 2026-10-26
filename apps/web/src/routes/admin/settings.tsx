@@ -12,8 +12,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { adminApi } from './admin-api';
-import { Card, PageHeader, QueryState, Select, Textarea } from './ui';
+import { Card, PageHeader, QueryState, Textarea } from './ui';
 
 type JsonSchema = {
   type?: string;
@@ -173,12 +180,17 @@ function Field({ id, schema, value, onChange }: FieldProps) {
   }
   if (schema.type === 'string' && schema.enum) {
     return (
-      <Select id={id} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)}>
-        {schema.enum.map((option) => (
-          <option key={String(option)} value={String(option)}>
-            {String(option)}
-          </option>
-        ))}
+      <Select value={String(value ?? '')} onValueChange={onChange}>
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {schema.enum.map((option) => (
+            <SelectItem key={String(option)} value={String(option)}>
+              {String(option)}
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
     );
   }

@@ -13,8 +13,9 @@ import {
   text,
   timestamp,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import type { Avatar } from '@spotibay/shared';
+import type { Avatar, ChatMedia, ChatMention } from '@spotibay/shared';
 
 export const roomVisibility = pgEnum('room_visibility', ['public', 'private']);
 export const queueMode = pgEnum('queue_mode', ['fifo', 'fair']);
@@ -190,11 +191,31 @@ export const chatMessages = pgTable(
       .notNull()
       .references(() => users.id),
     body: text('body').notNull(),
+    replyToId: uuid('reply_to_id').references((): AnyPgColumn => chatMessages.id),
+    /** Who was mentioned, with their names as written in the body. */
+    mentions: jsonb('mentions').$type<ChatMention[]>().notNull().default([]),
+    /** A GIF or sticker, as resolved by the server. */
+    media: jsonb('media').$type<ChatMedia>(),
     createdAt: createdAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedByAdminId: uuid('deleted_by_admin_id').references(() => admins.id),
   },
   (t) => [index('chat_messages_room_created_idx').on(t.roomId, t.createdAt)],
+);
+
+export const chatMessageReactions = pgTable(
+  'chat_message_reactions',
+  {
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => chatMessages.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    emoji: text('emoji').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.messageId, t.userId, t.emoji] })],
 );
 
 export const bans = pgTable('bans', {

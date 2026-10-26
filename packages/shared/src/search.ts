@@ -10,17 +10,13 @@ export const searchQuerySchema = z.object({
 });
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
 
-export const searchResponseSchema = z.object({
-  results: z.array(trackSchema),
-  /** Searches this user can still run today; cached answers don't use any. */
-  remainingSearchesToday: z.number().int().nonnegative(),
-});
+export const searchResponseSchema = z.object({ results: z.array(trackSchema) });
 export type SearchResponse = z.infer<typeof searchResponseSchema>;
 
 /** Error codes of `GET /api/search`, `GET /api/search/suggest` and `POST /api/search/resolve`. */
 export const searchErrorCodeSchema = z.enum([
   'search_disabled',
-  'search_user_limit',
+  'search_rate_limited',
   'search_budget_exhausted',
   'search_unavailable',
   'catalog_disabled',
@@ -54,15 +50,7 @@ export type ResolveBody = z.infer<typeof resolveBodySchema>;
  * these are the YouTube results to pick from.
  */
 export const resolveResponseSchema = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('matched'),
-    track: trackSchema,
-    remainingSearchesToday: z.number().int().nonnegative(),
-  }),
-  z.object({
-    status: z.literal('no_match'),
-    results: z.array(trackSchema),
-    remainingSearchesToday: z.number().int().nonnegative(),
-  }),
+  z.object({ status: z.literal('matched'), track: trackSchema }),
+  z.object({ status: z.literal('no_match'), results: z.array(trackSchema) }),
 ]);
 export type ResolveResponse = z.infer<typeof resolveResponseSchema>;

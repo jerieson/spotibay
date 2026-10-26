@@ -15,7 +15,7 @@ import { YouTubeError } from '../services/youtube.js';
 
 const statusByCode: Record<SearchErrorCode, number> = {
   search_disabled: 403,
-  search_user_limit: 429,
+  search_rate_limited: 429,
   search_budget_exhausted: 429,
   search_unavailable: 502,
   catalog_disabled: 403,

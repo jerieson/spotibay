@@ -552,7 +552,7 @@ export function createSocketServer(deps: SocketServerDeps) {
         const current = await currentRoom(socket);
         if (!current) return fail(socket, 'not_in_room', 'Join a room first');
         const { id, displayName, avatar } = socket.data.user;
-        await chat.send(current.row.id, { userId: id, displayName, avatar }, payload.body);
+        await chat.send(current.row.id, { userId: id, displayName, avatar }, payload);
       });
     });
 
@@ -563,6 +563,21 @@ export function createSocketServer(deps: SocketServerDeps) {
         const current = await currentRoom(socket);
         if (!current) return fail(socket, 'not_in_room', 'Join a room first');
         await chat.react(current.row.id, socket.data.user.id, payload.emoji);
+      });
+    });
+
+    socket.on('chat:reactMessage', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'chat:reactMessage', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        await chat.reactToMessage(
+          current.row.id,
+          socket.data.user.id,
+          payload.messageId,
+          payload.emoji,
+        );
       });
     });
 
@@ -593,6 +608,9 @@ export function createSocketServer(deps: SocketServerDeps) {
   });
   chat.onDeleted((roomId, id) => {
     io.to(roomChannel(roomId)).emit('chat:deleted', { id });
+  });
+  chat.onMessageReactions((roomId, messageId, reactions) => {
+    io.to(roomChannel(roomId)).emit('chat:messageReactions', { messageId, reactions });
   });
   chat.onReaction((roomId, reaction) => {
     io.to(roomChannel(roomId)).emit('chat:reaction', reaction);
