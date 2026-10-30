@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createRoom } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@/lib/errors';
 
 export function CreateRoomDialog() {
   const navigate = useNavigate();
@@ -115,7 +116,7 @@ export function CreateRoomDialog() {
           )}
           {create.isError && (
             <Alert variant="destructive">
-              <AlertDescription>{create.error.message}</AlertDescription>
+              <AlertDescription>{friendlyError(create.error)}</AlertDescription>
             </Alert>
           )}
           <Button type="submit" className="w-full" disabled={create.isPending}>

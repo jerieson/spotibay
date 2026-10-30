@@ -34,6 +34,7 @@ import {
   updatePlaylist,
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@/lib/errors';
 
 export function PlaylistPage() {
   const { id = '' } = useParams();
@@ -58,7 +59,7 @@ export function PlaylistPage() {
       onSaved(p);
       setEditing(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(friendlyError(err)),
   });
   const remove = useMutation({
     mutationFn: () => deletePlaylist(id),
@@ -67,12 +68,12 @@ export function PlaylistPage() {
       refresh();
       void navigate('/library');
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(friendlyError(err)),
   });
   const removeItem = useMutation({
     mutationFn: (itemId: string) => removePlaylistItem(id, itemId),
     onSuccess: onSaved,
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(friendlyError(err)),
   });
   const reorder = useMutation({
     mutationFn: ({ itemId, toIndex }: { itemId: string; toIndex: number }) =>
@@ -87,7 +88,7 @@ export function PlaylistPage() {
     onSuccess: onSaved,
     onError: (err, _vars, ctx) => {
       qc.setQueryData(key, ctx?.previous);
-      toast.error(err.message);
+      toast.error(friendlyError(err));
     },
   });
 

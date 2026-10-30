@@ -34,7 +34,7 @@ import { createRoomService } from './services/rooms.js';
 import { createSearchService } from './services/search.js';
 import { settings } from './services/settings.js';
 import { createBanStore, createRoomStore, createUserStore } from './services/user-store.js';
-import { createLookupCharger, createYouTubeService } from './services/youtube.js';
+import { createLookupCharger, createQuotaFlag, createYouTubeService } from './services/youtube.js';
 import { createSocketServer } from './socket/server.js';
 
 const allowedOrigin = env.APP_URL ? new URL(env.APP_URL).origin : undefined;
@@ -65,6 +65,7 @@ const youtube = createYouTubeService({
   tracks: createTrackStore(db),
   quota: quotaStore,
   chargeLookup: createLookupCharger(redis, () => settings.get('limits.videoLookupsPerUserPerDay')),
+  quotaFlag: createQuotaFlag(redis),
 });
 const search = createSearchService({
   redis,

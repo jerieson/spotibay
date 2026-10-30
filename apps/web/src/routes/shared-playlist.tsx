@@ -6,6 +6,7 @@ import { LikeButton } from '@/components/library/like-button';
 import { TrackRow } from '@/components/library/track-row';
 import { Button } from '@/components/ui/button';
 import { copySharedPlaylist, fetchSharedPlaylist } from '@/lib/api';
+import { friendlyError } from '@/lib/errors';
 
 /** A playlist someone shared by link: read-only, with a button to copy it to your library. */
 export function SharedPlaylistPage() {
@@ -24,7 +25,7 @@ export function SharedPlaylistPage() {
       toast(`Copied to your library`);
       void navigate(`/library/playlists/${p.id}`);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(friendlyError(err)),
   });
 
   if (playlist.isPending) return <p className="text-sm text-muted-foreground">Loading…</p>;

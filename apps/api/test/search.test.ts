@@ -34,7 +34,10 @@ beforeEach(async () => {
 });
 
 const search = (g: Awaited<ReturnType<Harness['guest']>>, q: string) =>
-  g.api<SearchResponse & { error?: string }>('GET', `/search?q=${encodeURIComponent(q)}`);
+  g.api<SearchResponse & { error?: string; resetAt?: string }>(
+    'GET',
+    `/search?q=${encodeURIComponent(q)}`,
+  );
 
 describe('GET /api/search', () => {
   it('requires a session and a query', async () => {
@@ -114,6 +117,7 @@ describe('GET /api/search', () => {
     const blocked = await search(b, 'another');
     expect(blocked.status).toBe(429);
     expect(blocked.body.error).toBe('search_budget_exhausted');
+    expect(Date.parse(blocked.body.resetAt ?? '')).toBeGreaterThan(Date.now());
     expect(h.searchCalls).toHaveLength(1);
   });
 

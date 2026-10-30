@@ -55,7 +55,7 @@ export function useRoomConnection(code: string, asAdmin = false) {
             ? 'You are banned from Spotibay.'
             : err.message === 'maintenance'
               ? 'Spotibay is down for maintenance.'
-              : 'Could not connect.',
+              : "Can't connect to Spotibay. Check your internet connection and try again.",
       });
     };
     const onState: ServerToClientEvents['room:state'] = (state) =>

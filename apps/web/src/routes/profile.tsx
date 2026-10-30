@@ -22,6 +22,7 @@ import {
 import { avatarStyleLabels, randomSeed } from '@/lib/avatar';
 import { cn } from '@/lib/utils';
 import { useRecoveryStore } from '@/stores/recovery';
+import { ApiError, friendlyError } from '@/lib/errors';
 
 export function ProfilePage() {
   const session = useSession();
@@ -67,7 +68,7 @@ function ProfileForm({ user }: { user: User }) {
   const nameCheck = displayNameSchema.safeParse(name);
   const dirty =
     name.trim() !== user.displayName || JSON.stringify(avatar) !== JSON.stringify(user.avatar);
-  const serverError = update.error?.message;
+  const serverError = update.error && friendlyError(update.error);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -190,7 +191,9 @@ function RecoverySection() {
           the old code stops working.
         </p>
       )}
-      {regenerate.isError && <p className="text-sm text-destructive">{regenerate.error.message}</p>}
+      {regenerate.isError && (
+        <p className="text-sm text-destructive">{friendlyError(regenerate.error)}</p>
+      )}
       <Button
         type="button"
         variant="outline"
@@ -247,10 +250,9 @@ function RestoreSection() {
         </div>
         {recover.isError && (
           <p className="text-sm text-destructive">
-            {recover.error.message === 'invalid_recovery_code' ||
-            recover.error.message.includes('404')
+            {recover.error instanceof ApiError && recover.error.code === 'invalid_recovery_code'
               ? "That code didn't match an account."
-              : recover.error.message}
+              : friendlyError(recover.error)}
           </p>
         )}
         {recover.isSuccess && <p className="text-sm text-muted-foreground">Account restored.</p>}

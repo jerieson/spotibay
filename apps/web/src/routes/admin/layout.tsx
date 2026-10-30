@@ -24,6 +24,7 @@ import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { adminApi } from './admin-api';
 import { Card } from './ui';
+import { friendlyError } from '@/lib/errors';
 
 export const adminStatsKey = ['admin', 'stats'] as const;
 
@@ -45,7 +46,7 @@ export function AdminLayout() {
   if (me.error instanceof ApiError && me.error.status === 401) {
     return <Login onDone={() => void qc.invalidateQueries({ queryKey: ['admin', 'me'] })} />;
   }
-  if (me.isError) return <p className="p-6 text-destructive">{me.error.message}</p>;
+  if (me.isError) return <p className="p-6 text-destructive">{friendlyError(me.error)}</p>;
 
   return <Panel username={me.data.username} />;
 }
@@ -89,7 +90,7 @@ function Login({ onDone }: { onDone: () => void }) {
           </div>
           {login.error && (
             <p role="alert" className="text-sm text-destructive">
-              {login.error.message}
+              {friendlyError(login.error)}
             </p>
           )}
           <Button

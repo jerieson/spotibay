@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { adminApi } from './admin-api';
 import { Card, PageHeader, QueryState, Textarea } from './ui';
+import { friendlyError } from '@/lib/errors';
 
 type JsonSchema = {
   type?: string;
@@ -96,7 +97,7 @@ function SettingRow({ settingKey, current }: { settingKey: SettingKey; current: 
       await qc.invalidateQueries({ queryKey: ['admin', 'settings'] });
       toast.success(`Saved ${settingKey}`);
     },
-    onError: (err) => setError(err.message),
+    onError: (err) => setError(friendlyError(err)),
   });
   const id = `setting-${settingKey}`;
 

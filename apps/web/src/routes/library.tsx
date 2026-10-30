@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useLikes } from '@/hooks/use-likes';
 import { createPlaylist, fetchListenHistory, fetchPlaylists } from '@/lib/api';
+import { friendlyError } from '@/lib/errors';
 
 export function LibraryPage() {
   return (
@@ -74,7 +75,7 @@ function PlaylistsTab() {
       </div>
       {create.isError && (
         <p role="alert" className="text-sm text-destructive">
-          {create.error.message}
+          {friendlyError(create.error)}
         </p>
       )}
       {playlists.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}

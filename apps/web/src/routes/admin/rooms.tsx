@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { adminApi } from './admin-api';
 import { Card, Empty, formatTime, PageHeader, QueryState } from './ui';
+import { friendlyError } from '@/lib/errors';
 
 export function RoomsPage() {
   const [selected, setSelected] = useState<string | null>(null);
@@ -65,7 +66,7 @@ function RoomDetail({ code, onGone }: { code: string; onGone: () => void }) {
       await refresh();
       onGone();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const kick = useMutation({
     mutationFn: (userId: string) => adminApi.kick(code, userId),
@@ -73,7 +74,7 @@ function RoomDetail({ code, onGone }: { code: string; onGone: () => void }) {
       toast.success('Removed from the room');
       await refresh();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   if (room.isError)

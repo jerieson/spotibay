@@ -12,12 +12,20 @@ import { z } from 'zod';
 import { hit } from '../lib/rate-limit.js';
 import { CatalogError, pickMatch, type CatalogService } from './catalog.js';
 import type { SettingsService } from './settings.js';
-import { quotaDate, type QuotaStore, type StoredTrack } from './youtube.js';
+import {
+  quotaDate,
+  quotaResetAt,
+  YouTubeError,
+  type QuotaStore,
+  type StoredTrack,
+} from './youtube.js';
 
 export class SearchError extends Error {
   constructor(
     readonly code: SearchErrorCode,
     message: string,
+    /** For `search_budget_exhausted`: when searching works again. */
+    readonly resetAt?: Date,
   ) {
     super(message);
     this.name = 'SearchError';
@@ -86,7 +94,7 @@ export function createSearchService({
 
     const date = quotaDate(now());
     if ((await quota.get(date)).searchCalls >= settings.get('search.dailySearchCallBudget')) {
-      throw new SearchError('search_budget_exhausted', 'Search is used up for today');
+      throw budgetExhausted();
     }
     // No daily cap per person; a burst limit keeps one person from using up the app's budget.
     const key = `ratelimit:search:${userId}`;
@@ -100,11 +108,20 @@ export function createSearchService({
     } catch (err) {
       // A search that never produced an answer shouldn't count against the user.
       await redis.decr(key);
+      if (err instanceof YouTubeError && err.code === 'quota_exceeded') throw budgetExhausted();
       throw err;
     }
     const results = tracks.map(toTrack);
     await redis.set(cacheKey, JSON.stringify(results), 'EX', settings.get('search.cacheTtlSec'));
     return { results };
+  }
+
+  function budgetExhausted() {
+    return new SearchError(
+      'search_budget_exhausted',
+      "Today's YouTube searches are used up. Pick a suggested song or paste a YouTube link instead.",
+      quotaResetAt(now()),
+    );
   }
 
   function catalogError(err: unknown): never {

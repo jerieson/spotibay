@@ -39,15 +39,25 @@ import {
   type User,
 } from '@spotibay/shared';
 import type { z } from 'zod';
+import { networkError, throwForResponse } from './errors';
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
+export { ApiError } from './errors';
+
+/** `fetch`, with a failed response or a dropped connection turned into an `ApiError`. */
+export async function call(path: string, method = 'GET', body?: unknown): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw networkError();
   }
+  if (!res.ok) await throwForResponse(res);
+  return res;
 }
 
 async function request<T extends z.ZodType>(
@@ -55,22 +65,8 @@ async function request<T extends z.ZodType>(
   path: string,
   init?: { method?: string; body?: unknown },
 ): Promise<z.infer<T>> {
-  const res = await fetch(path, {
-    method: init?.method ?? 'GET',
-    credentials: 'same-origin',
-    headers: init?.body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: init?.body === undefined ? undefined : JSON.stringify(init.body),
-  });
-  const json: unknown = await res.json().catch(() => null);
-  if (!res.ok) {
-    const err = (json ?? {}) as { error?: string; message?: string };
-    throw new ApiError(
-      res.status,
-      err.error ?? 'unknown',
-      err.message ?? `Request failed (${res.status})`,
-    );
-  }
-  return schema.parse(json);
+  const res = await call(path, init?.method, init?.body);
+  return schema.parse(await res.json());
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -152,19 +148,7 @@ export async function fetchRoomHistory(code: string): Promise<HistoryEntry[]> {
 
 /** For endpoints that answer 204. */
 async function send(path: string, method: string, body?: unknown): Promise<void> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (res.ok) return;
-  const err = ((await res.json().catch(() => null)) ?? {}) as { error?: string; message?: string };
-  throw new ApiError(
-    res.status,
-    err.error ?? 'unknown',
-    err.message ?? `Request failed (${res.status})`,
-  );
+  await call(path, method, body);
 }
 
 export async function fetchPlaylists(): Promise<PlaylistSummary[]> {

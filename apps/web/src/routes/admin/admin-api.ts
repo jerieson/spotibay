@@ -14,25 +14,11 @@ import {
   type CreateBanBody,
 } from '@spotibay/shared';
 import type { z } from 'zod';
-import { ApiError } from '@/lib/api';
+import { call as fetchApi } from '@/lib/api';
 
 async function call(path: string, method = 'GET', body?: unknown): Promise<unknown> {
-  const res = await fetch(`/api/admin${path}`, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json: unknown = await res.json().catch(() => null);
-  if (!res.ok) {
-    const err = (json ?? {}) as { error?: string; message?: string };
-    throw new ApiError(
-      res.status,
-      err.error ?? 'unknown',
-      err.message ?? `Request failed (${res.status})`,
-    );
-  }
-  return json;
+  const res = await fetchApi(`/api/admin${path}`, method, body);
+  return res.json().catch(() => null);
 }
 
 const get = async <T extends z.ZodType>(schema: T, path: string): Promise<z.infer<T>> =>

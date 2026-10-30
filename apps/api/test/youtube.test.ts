@@ -6,6 +6,7 @@ import {
   parsePlaylistId,
   parseVideoId,
   quotaDate,
+  quotaResetAt,
   YouTubeError,
   type StoredTrack,
 } from '../src/services/youtube.js';
@@ -63,6 +64,17 @@ describe('quotaDate', () => {
   });
 });
 
+describe('quotaResetAt', () => {
+  it('is the next Pacific midnight, in winter and in summer', () => {
+    expect(quotaResetAt(new Date('2026-01-15T07:30:00Z')).toISOString()).toBe(
+      '2026-01-15T08:00:00.000Z',
+    );
+    expect(quotaResetAt(new Date('2026-07-15T12:00:00Z')).toISOString()).toBe(
+      '2026-07-16T07:00:00.000Z',
+    );
+  });
+});
+
 describe('expectedPositionMs', () => {
   const item = {
     id: 'i',
@@ -96,6 +108,8 @@ describe('YouTube service', () => {
     opts: {
       apiKey?: string | undefined;
       failWith?: number;
+      /** Body sent with `failWith`. */
+      failBody?: unknown;
       /** Ids the fake API doesn't know. */
       unknown?: string[];
       chargeLookup?: (userId: string) => Promise<boolean>;
@@ -104,10 +118,12 @@ describe('YouTube service', () => {
     const stored = new Map<string, StoredTrack>();
     const quota: Array<[string, number, number]> = [];
     const calls: URL[] = [];
+    const flagged = new Set<string>();
     let clock = new Date('2026-03-01T12:00:00Z');
     const fetchFake = (async (input: URL) => {
       calls.push(input);
-      if (opts.failWith) return new Response('{}', { status: opts.failWith });
+      if (opts.failWith)
+        return new Response(JSON.stringify(opts.failBody ?? {}), { status: opts.failWith });
       const ids = (input.searchParams.get('id') ?? '')
         .split(',')
         .filter((id) => !opts.unknown?.includes(id));
@@ -133,11 +149,16 @@ describe('YouTube service', () => {
         get: async () => ({ units: 0, searchCalls: 0 }),
       },
       chargeLookup: opts.chargeLookup,
+      quotaFlag: {
+        isSet: async (date) => flagged.has(date),
+        set: async (date) => void flagged.add(date),
+      },
       fetch: fetchFake,
       now: () => clock,
     });
     return {
       service,
+      flagged,
       stored,
       quota,
       calls,
@@ -218,6 +239,36 @@ describe('YouTube service', () => {
       code: 'api_error',
     });
     expect(failing.quota).toHaveLength(1);
+  });
+
+  describe('when the daily quota is spent', () => {
+    const spent = { error: { errors: [{ reason: 'quotaExceeded' }] } };
+
+    it('says so, and stops asking YouTube for the rest of the day', async () => {
+      const { service, calls, flagged } = setup({ failWith: 403, failBody: spent });
+      await expect(service.getVideos(['aaaaaaaaaaa'])).rejects.toMatchObject({
+        code: 'quota_exceeded',
+      });
+      expect(flagged.has('2026-03-01')).toBe(true);
+      await expect(service.search('song')).rejects.toMatchObject({ code: 'quota_exceeded' });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('falls back to stored details, however old', async () => {
+      const { service, stored, calls } = setup({ failWith: 403, failBody: spent });
+      stored.set('aaaaaaaaaaa', {
+        videoId: 'aaaaaaaaaaa',
+        title: 'Old',
+        channelTitle: 'C',
+        thumbnailUrl: 'u',
+        durationSec: 90,
+        embeddable: true,
+        fetchedAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      const res = await service.getVideos(['aaaaaaaaaaa']);
+      expect(res.get('aaaaaaaaaaa')?.title).toBe('Old');
+      expect(calls).toHaveLength(1);
+    });
   });
 });
 

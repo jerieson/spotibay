@@ -14,7 +14,12 @@ import {
 import type { Db } from '../db/client.js';
 import { playlistItems, playlists, tracks, users } from '../db/schema.js';
 import { createKeyedLock } from '../lib/keyed-lock.js';
-import { parsePlaylistId, YouTubeError, type YouTubeService } from './youtube.js';
+import {
+  parsePlaylistId,
+  youtubeFailureMessage,
+  YouTubeError,
+  type YouTubeService,
+} from './youtube.js';
 
 export class PlaylistError extends Error {
   constructor(
@@ -170,7 +175,7 @@ export function createPlaylistService({
     } catch (err) {
       if (err instanceof YouTubeError) {
         if (err.code === 'user_limit') throw new PlaylistError('rate_limited', err.message);
-        throw new PlaylistError('youtube_unavailable', 'Could not reach YouTube, try again later');
+        throw new PlaylistError('youtube_unavailable', youtubeFailureMessage(err));
       }
       throw err;
     }
@@ -345,10 +350,7 @@ export function createPlaylistService({
         if (err instanceof YouTubeError) {
           if (err.code === 'not_found') throw new PlaylistError('import_not_found', err.message);
           if (err.code === 'user_limit') throw new PlaylistError('rate_limited', err.message);
-          throw new PlaylistError(
-            'youtube_unavailable',
-            'Could not reach YouTube, try again later',
-          );
+          throw new PlaylistError('youtube_unavailable', youtubeFailureMessage(err));
         }
         throw err;
       }

@@ -35,7 +35,7 @@ const statusByCode: Record<PlaylistErrorCode, number> = {
   import_disabled: 403,
   invalid_playlist_url: 400,
   import_not_found: 404,
-  youtube_unavailable: 502,
+  youtube_unavailable: 503,
   rate_limited: 429,
   nothing_to_import: 422,
   room_not_found: 404,

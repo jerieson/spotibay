@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { Track } from '@spotibay/shared';
 import { fetchLikes, setLiked } from '@/lib/api';
+import { friendlyError } from '@/lib/errors';
 
 export const likesKey = ['likes'] as const;
 
@@ -25,7 +26,7 @@ export function useLikes() {
     },
     onError: (err, _vars, ctx) => {
       qc.setQueryData(likesKey, ctx?.previous);
-      toast.error(err.message);
+      toast.error(friendlyError(err));
     },
     onSettled: () => void qc.invalidateQueries({ queryKey: likesKey }),
   });

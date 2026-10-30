@@ -8,6 +8,7 @@ import { fetchRoomHistory, saveRoomHistory } from '@/lib/api';
 import { formatDuration } from '@/lib/format';
 import { socket } from '@/lib/socket';
 import { useRoomStore } from '@/stores/room';
+import { friendlyError } from '@/lib/errors';
 
 /** Tracks already played in this room. Refetches when the room moves on to another track. */
 export function HistoryList({ code }: { code: string }) {
@@ -28,7 +29,7 @@ export function HistoryList({ code }: { code: string }) {
         ),
       });
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(friendlyError(err)),
   });
   const history = useQuery({
     queryKey: ['room-history', code, playingId],

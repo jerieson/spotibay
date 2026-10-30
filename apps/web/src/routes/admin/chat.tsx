@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { adminApi } from './admin-api';
 import { Card, Empty, formatTime, PageHeader, QueryState } from './ui';
+import { friendlyError } from '@/lib/errors';
 
 export function ChatPage() {
   const qc = useQueryClient();
@@ -24,7 +25,7 @@ export function ChatPage() {
       toast.success('Message deleted');
       await qc.invalidateQueries({ queryKey: ['admin', 'chat'] });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   return (

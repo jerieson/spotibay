@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { searchGifs } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@/lib/errors';
 
 const SEARCH_DELAY_MS = 300;
 
@@ -67,7 +68,7 @@ export function GifPicker({ onPick }: { onPick: (media: ChatMedia) => void }) {
           )}
           {results.isError && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {results.error.message}
+              {friendlyError(results.error)}
             </p>
           )}
           {results.isSuccess && items.length === 0 && (

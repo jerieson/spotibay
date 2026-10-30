@@ -43,7 +43,25 @@ export interface QuotaStore {
   get(date: string): Promise<{ units: number; searchCalls: number }>;
 }
 
-export type YouTubeErrorCode = 'not_configured' | 'api_error' | 'not_found' | 'user_limit';
+export type YouTubeErrorCode =
+  | 'not_configured'
+  | 'api_error'
+  | 'not_found'
+  | 'user_limit'
+  /** The project's daily quota is spent; calls start working again at Pacific midnight. */
+  | 'quota_exceeded';
+
+/** What people see when a YouTube call fails for a reason other than their own input. */
+export function youtubeFailureMessage(err: YouTubeError): string {
+  switch (err.code) {
+    case 'not_configured':
+      return 'Adding songs from YouTube is not set up on this server';
+    case 'quota_exceeded':
+      return "YouTube's daily limit is reached, so new videos can't be checked until it resets. Songs already in Spotibay still work.";
+    default:
+      return "Spotibay can't reach YouTube right now. Try again in a moment.";
+  }
+}
 
 export class YouTubeError extends Error {
   constructor(
@@ -83,6 +101,16 @@ export function quotaDate(now: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(now);
 }
 
+/** When the quota resets next: the coming midnight Pacific Time (UTC-8, or UTC-7 in summer). */
+export function quotaResetAt(now: Date): Date {
+  const [y, m, d] = quotaDate(now).split('-').map(Number) as [number, number, number];
+  for (const offsetHours of [7, 8]) {
+    const candidate = new Date(Date.UTC(y, m - 1, d + 1, offsetHours));
+    if (quotaDate(new Date(candidate.getTime() - 1)) !== quotaDate(candidate)) return candidate;
+  }
+  return new Date(Date.UTC(y, m - 1, d + 1, 8));
+}
+
 const videosResponseSchema = z.object({
   items: z
     .array(
@@ -110,6 +138,14 @@ const playlistItemsResponseSchema = z.object({
   nextPageToken: z.string().optional(),
 });
 
+/** Google's error body; `reason` tells a spent quota apart from other refusals. */
+const errorResponseSchema = z.object({
+  error: z.object({
+    errors: z.array(z.object({ reason: z.string().optional() })).default([]),
+  }),
+});
+const QUOTA_REASONS = new Set(['quotaExceeded', 'dailyLimitExceeded']);
+
 const searchResponseSchema = z.object({
   items: z.array(z.object({ id: z.object({ videoId: z.string().optional() }) })).default([]),
 });
@@ -134,12 +170,29 @@ export function createLookupCharger(
   };
 }
 
+/** Remembers that YouTube refused for quota today, so later calls don't ask again until it resets. */
+export interface QuotaFlag {
+  isSet(date: string): Promise<boolean>;
+  set(date: string): Promise<void>;
+}
+
+/** Quota flag in Redis (`yt:exhausted:{date}`), shared by every API process. */
+export function createQuotaFlag(redis: Redis): QuotaFlag {
+  const key = (date: string) => `yt:exhausted:${date}`;
+  return {
+    isSet: async (date) => (await redis.exists(key(date))) === 1,
+    set: async (date) => void (await redis.set(key(date), '1', 'EX', LOOKUP_COUNT_TTL_SEC)),
+  };
+}
+
 export interface YouTubeServiceDeps {
   apiKey: string | undefined;
   tracks: TrackStore;
   quota: QuotaStore;
   /** Caps the lookups one person can trigger; uncapped when omitted. */
   chargeLookup?: LookupCharger;
+  /** Without one, a spent quota is only noticed when YouTube refuses each call. */
+  quotaFlag?: QuotaFlag;
   fetch?: typeof fetch;
   now?: () => Date;
 }
@@ -149,6 +202,7 @@ export function createYouTubeService({
   tracks,
   quota,
   chargeLookup,
+  quotaFlag,
   fetch: fetchImpl = fetch,
   now = () => new Date(),
 }: YouTubeServiceDeps) {
@@ -175,6 +229,27 @@ export function createYouTubeService({
     return false;
   }
 
+  const quotaError = () =>
+    new YouTubeError('quota_exceeded', "YouTube's daily limit for Spotibay is used up");
+
+  /** Refuses before calling YouTube when there is no key or today's quota is already spent. */
+  async function ready() {
+    if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
+    if (await quotaFlag?.isSet(quotaDate(now()))) throw quotaError();
+  }
+
+  /** The error for a refused call; a spent quota is also remembered for the rest of the day. */
+  async function failure(res: Response): Promise<YouTubeError> {
+    if (res.status === 403) {
+      const body = errorResponseSchema.safeParse(await res.json().catch(() => null));
+      if (body.success && body.data.error.errors.some((e) => QUOTA_REASONS.has(e.reason ?? ''))) {
+        await quotaFlag?.set(quotaDate(now()));
+        return quotaError();
+      }
+    }
+    return new YouTubeError('api_error', `YouTube API returned ${res.status}`);
+  }
+
   /** Charges a lookup to `userId` (if given), refusing once they are over their cap. */
   async function charge(userId: string | undefined) {
     if (!chargeLookup || userId === undefined) return;
@@ -184,16 +259,16 @@ export function createYouTubeService({
   }
 
   async function fetchVideos(ids: string[], userId: string | undefined): Promise<StoredTrack[]> {
-    if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
+    await ready();
     await charge(userId);
     const url = new URL(VIDEOS_ENDPOINT);
     url.searchParams.set('part', 'snippet,contentDetails,status');
     url.searchParams.set('id', ids.join(','));
-    url.searchParams.set('key', apiKey);
+    url.searchParams.set('key', apiKey!);
     const res = await fetchImpl(url);
     // A failed call may still have cost quota, so count every request that was made.
     await quota.add(quotaDate(now()), VIDEOS_LIST_COST, 0);
-    if (!res.ok) throw new YouTubeError('api_error', `YouTube API returned ${res.status}`);
+    if (!res.ok) throw await failure(res);
     const parsed = videosResponseSchema.safeParse(await res.json());
     if (!parsed.success) throw new YouTubeError('api_error', 'Unexpected YouTube API response');
     const fetchedAt = now();
@@ -215,37 +290,47 @@ export function createYouTubeService({
   /**
    * Details for the given videos, from the track table when fresh, else from `videos.list`.
    * Unknown ids are absent. Calls YouTube makes for `userId` count toward their daily cap.
+   * Once the quota is spent, older stored details are used rather than failing.
    */
   async function getVideos(videoIds: string[], userId?: string): Promise<Map<string, StoredTrack>> {
     const ids = [...new Set(videoIds)].filter((id) => VIDEO_ID_PATTERN.test(id));
     const result = new Map<string, StoredTrack>();
+    const stale = new Map<string, StoredTrack>();
     const cutoff = now().getTime() - TRACK_TTL_MS;
     for (const track of await tracks.findMany(ids)) {
       if (track.fetchedAt.getTime() >= cutoff) result.set(track.videoId, track);
+      else stale.set(track.videoId, track);
     }
     const toFetch = ids.filter((id) => !result.has(id) && !knownMissing(id));
-    for (let i = 0; i < toFetch.length; i += VIDEOS_BATCH) {
-      const batch = toFetch.slice(i, i + VIDEOS_BATCH);
-      const stored = await tracks.upsertMany(await fetchVideos(batch, userId));
-      for (const track of stored) result.set(track.videoId, track);
-      rememberMissing(batch.filter((id) => !result.has(id)));
+    try {
+      for (let i = 0; i < toFetch.length; i += VIDEOS_BATCH) {
+        const batch = toFetch.slice(i, i + VIDEOS_BATCH);
+        const stored = await tracks.upsertMany(await fetchVideos(batch, userId));
+        for (const track of stored) result.set(track.videoId, track);
+        rememberMissing(batch.filter((id) => !result.has(id)));
+      }
+    } catch (err) {
+      // Videos we have never seen can't be checked without quota; the rest can wait a day.
+      const quotaSpent = err instanceof YouTubeError && err.code === 'quota_exceeded';
+      if (!quotaSpent || toFetch.some((id) => !result.has(id) && !stale.has(id))) throw err;
+      for (const [id, track] of stale) if (!result.has(id)) result.set(id, track);
     }
     return result;
   }
 
   /** Top embeddable video matches for `query`, with durations (one `search.list` plus one `videos.list` for uncached ids). */
   async function search(query: string): Promise<StoredTrack[]> {
-    if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
+    await ready();
     const url = new URL(SEARCH_ENDPOINT);
     url.searchParams.set('part', 'snippet');
     url.searchParams.set('type', 'video');
     url.searchParams.set('videoEmbeddable', 'true');
     url.searchParams.set('maxResults', String(SEARCH_MAX_RESULTS));
     url.searchParams.set('q', query);
-    url.searchParams.set('key', apiKey);
+    url.searchParams.set('key', apiKey!);
     const res = await fetchImpl(url);
     await quota.add(quotaDate(now()), SEARCH_LIST_COST, 1);
-    if (!res.ok) throw new YouTubeError('api_error', `YouTube API returned ${res.status}`);
+    if (!res.ok) throw await failure(res);
     const parsed = searchResponseSchema.safeParse(await res.json());
     if (!parsed.success) throw new YouTubeError('api_error', 'Unexpected YouTube API response');
     const ids = parsed.data.items.flatMap((item) => item.id.videoId ?? []);
@@ -262,7 +347,7 @@ export function createYouTubeService({
     max: number,
     userId?: string,
   ): Promise<string[]> {
-    if (!apiKey) throw new YouTubeError('not_configured', 'YouTube is not configured');
+    await ready();
     const ids: string[] = [];
     let pageToken: string | undefined;
     while (ids.length < max) {
@@ -270,16 +355,19 @@ export function createYouTubeService({
       url.searchParams.set('part', 'contentDetails');
       url.searchParams.set('playlistId', playlistId);
       url.searchParams.set('maxResults', String(PLAYLIST_PAGE_SIZE));
-      url.searchParams.set('key', apiKey);
+      url.searchParams.set('key', apiKey!);
       if (pageToken) url.searchParams.set('pageToken', pageToken);
       await charge(userId);
       const res = await fetchImpl(url);
       await quota.add(quotaDate(now()), PLAYLIST_ITEMS_COST, 0);
-      if (res.status === 404 || res.status === 403) {
+      if (!res.ok) {
+        const err = await failure(res);
         // Missing and private playlists look the same to us.
-        throw new YouTubeError('not_found', 'That playlist was not found or is private');
+        if (err.code !== 'quota_exceeded' && (res.status === 404 || res.status === 403)) {
+          throw new YouTubeError('not_found', 'That playlist was not found or is private');
+        }
+        throw err;
       }
-      if (!res.ok) throw new YouTubeError('api_error', `YouTube API returned ${res.status}`);
       const parsed = playlistItemsResponseSchema.safeParse(await res.json());
       if (!parsed.success) throw new YouTubeError('api_error', 'Unexpected YouTube API response');
       for (const item of parsed.data.items) {

@@ -17,7 +17,7 @@ const statusByCode: Record<SearchErrorCode, number> = {
   search_disabled: 403,
   search_rate_limited: 429,
   search_budget_exhausted: 429,
-  search_unavailable: 502,
+  search_unavailable: 503,
   catalog_disabled: 403,
   catalog_unavailable: 503,
   catalog_not_found: 404,
@@ -26,14 +26,17 @@ const statusByCode: Record<SearchErrorCode, number> = {
 /** Answers known search failures; rethrows the rest. */
 function sendError(res: Response, err: unknown) {
   if (err instanceof SearchError) {
-    res.status(statusByCode[err.code]).json({ error: err.code, message: err.message });
+    res
+      .status(statusByCode[err.code])
+      .json({ error: err.code, message: err.message, resetAt: err.resetAt?.toISOString() });
     return;
   }
   if (err instanceof YouTubeError) {
     logger.error({ err }, 'youtube search failed');
-    res
-      .status(statusByCode.search_unavailable)
-      .json({ error: 'search_unavailable', message: 'Search is unavailable right now' });
+    res.status(statusByCode.search_unavailable).json({
+      error: 'search_unavailable',
+      message: "Spotibay can't reach YouTube right now. Try again in a moment.",
+    });
     return;
   }
   throw err;

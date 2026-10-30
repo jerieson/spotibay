@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { addToPlaylist, createPlaylist, fetchPlaylists } from '@/lib/api';
+import { friendlyError } from '@/lib/errors';
 
 /** A button that opens a picker to put `track` in one of the user's playlists, or a new one. */
 export function AddToPlaylistDialog({ track }: { track: Track }) {
@@ -34,7 +35,7 @@ export function AddToPlaylistDialog({ track }: { track: Track }) {
       setOpen(false);
       setName('');
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(friendlyError(err)),
   });
 
   function create(e: FormEvent) {

@@ -19,7 +19,12 @@ import { createKeyedLock } from '../lib/keyed-lock.js';
 import type { Presence } from './presence.js';
 import type { PlaybackStore } from './playback-store.js';
 import type { ActiveQueueItem, FinalStatus, QueueStore } from './queue-store.js';
-import { parseVideoId, YouTubeError, type YouTubeService } from './youtube.js';
+import {
+  parseVideoId,
+  youtubeFailureMessage,
+  YouTubeError,
+  type YouTubeService,
+} from './youtube.js';
 import type { RoomService } from './rooms.js';
 import { logger } from '../logger.js';
 
@@ -235,12 +240,7 @@ export function createPlaybackService({
     } catch (err) {
       if (err instanceof YouTubeError) {
         if (err.code === 'user_limit') throw new PlaybackError('rate_limited', err.message);
-        throw new PlaybackError(
-          'youtube_unavailable',
-          err.code === 'not_configured'
-            ? 'Adding tracks is not set up on this server'
-            : 'Could not reach YouTube, try again in a moment',
-        );
+        throw new PlaybackError('youtube_unavailable', youtubeFailureMessage(err));
       }
       throw err;
     }
@@ -265,14 +265,20 @@ export function createPlaybackService({
     return withLock(roomId, async () => {
       const active = await queue.listActive(roomId);
       if (active.length >= settings.get('limits.maxQueueLength')) {
-        throw new PlaybackError('queue_limit', 'The queue is full');
+        throw new PlaybackError(
+          'queue_limit',
+          'The queue is full. Add more once a few songs play.',
+        );
       }
       if (active.some((r) => r.item.track.videoId === videoId)) {
         throw new PlaybackError('duplicate_track', 'That track is already in the queue');
       }
       const mine = active.filter((r) => r.status === 'queued' && r.item.addedBy.userId === userId);
       if (mine.length >= settings.get('limits.maxQueueItemsPerUser')) {
-        throw new PlaybackError('queue_limit', 'You have too many tracks in the queue');
+        throw new PlaybackError(
+          'queue_limit',
+          `You already have ${mine.length} songs waiting. Add more once one of them plays.`,
+        );
       }
       const item = await queue.insert({ roomId, videoId, addedBy: userId });
       if (!item) throw new Error('queue insert returned no row');

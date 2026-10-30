@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { adminApi } from './admin-api';
 import { Card, Empty, formatTime, PageHeader, QueryState } from './ui';
+import { friendlyError } from '@/lib/errors';
 
 const durations = [
   { label: '1 hour', minutes: 60 },
@@ -93,7 +94,7 @@ function useBanMutations() {
       toast.success('Ban created');
       await refresh();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const unban = useMutation({
     mutationFn: (id: number) => adminApi.unban(id),
@@ -101,7 +102,7 @@ function useBanMutations() {
       toast.success('Ban lifted');
       await refresh();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   return { ban, unban };
 }
@@ -155,7 +156,7 @@ function UserDetail({ id }: { id: string }) {
   const kick = useMutation({
     mutationFn: (code: string) => adminApi.kick(code, id),
     onSuccess: () => toast.success('Removed from the room'),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const [reason, setReason] = useState('');
   const [minutes, setMinutes] = useState<number | null>(60 * 24);

@@ -22,21 +22,13 @@ import {
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { ApiError, resolveTrack, searchTracks, suggestTracks } from '@/lib/api';
+import { resolveTrack, searchTracks, suggestTracks } from '@/lib/api';
+import { friendlyError } from '@/lib/errors';
 import { formatDuration } from '@/lib/format';
 import { socket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
 
-const BUDGET_MESSAGE = 'Search is used up for today — paste a YouTube link instead';
 const SUGGEST_DELAY_MS = 300;
-
-function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.code === 'search_budget_exhausted') return BUDGET_MESSAGE;
-    return err.message;
-  }
-  return 'Search failed. Try again.';
-}
 
 /** A pasted YouTube link (not just a word that happens to look like a video id). */
 const pastedVideoId = (text: string) => (/[./]/.test(text) ? parseVideoId(text) : null);
@@ -191,7 +183,7 @@ export function AddMusicSheet({
           )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
-              {errorMessage(error)}
+              {friendlyError(error, 'Search failed. Try again.')}
             </p>
           )}
 

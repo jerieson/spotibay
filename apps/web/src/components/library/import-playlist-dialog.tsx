@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { importPlaylist } from '@/lib/api';
+import { friendlyError } from '@/lib/errors';
 
 export function ImportPlaylistDialog() {
   const navigate = useNavigate();
@@ -79,7 +80,7 @@ export function ImportPlaylistDialog() {
           />
           {run.isError && (
             <Alert variant="destructive">
-              <AlertDescription>{run.error.message}</AlertDescription>
+              <AlertDescription>{friendlyError(run.error)}</AlertDescription>
             </Alert>
           )}
           <Button type="submit" className="w-full" disabled={url.trim() === '' || run.isPending}>
