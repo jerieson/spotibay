@@ -17,6 +17,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { ChevronDown, ChevronUp, GripVertical, X } from 'lucide-react';
 import { moveItem, queueScore, type QueueItem } from '@spotibay/shared';
 import { UserAvatar } from '@/components/user-avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatDuration } from '@/lib/format';
 import { socket } from '@/lib/socket';
@@ -121,11 +122,20 @@ function QueueRow({
           {item.track.channelTitle} · {formatDuration(item.track.durationSec * 1000)}
         </p>
       </div>
-      <UserAvatar
-        avatar={item.addedBy.avatar}
-        name={`Added by ${item.addedBy.displayName}`}
-        className="hidden size-6 sm:block"
-      />
+      {item.source === 'autoplay' ? (
+        <Badge
+          variant="outline"
+          title="Queued by autoplay. Add a song and it takes this one's place."
+        >
+          Autoplay
+        </Badge>
+      ) : (
+        <UserAvatar
+          avatar={item.addedBy.avatar}
+          name={`Added by ${item.addedBy.displayName}`}
+          className="hidden size-6 sm:block"
+        />
+      )}
       <div className="flex shrink-0 items-center" role="group" aria-label="Votes">
         <Button
           size="icon"

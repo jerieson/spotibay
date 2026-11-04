@@ -1,4 +1,4 @@
-import { Pause, Play, RefreshCw, SkipForward, ThumbsDown, Volume2 } from 'lucide-react';
+import { Pause, Play, Radio, RefreshCw, SkipForward, ThumbsDown, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { expectedPositionMs } from '@spotibay/shared';
 import { LikeButton } from '@/components/library/like-button';
@@ -121,15 +121,22 @@ export function PlayerPanel() {
                   {item.track.title}
                 </p>
                 <p className="truncate text-sm text-muted-foreground">{item.track.channelTitle}</p>
-                <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-                  <span className="shrink-0">Added by</span>
-                  <UserAvatar
-                    avatar={item.addedBy.avatar}
-                    name={item.addedBy.displayName}
-                    className="size-4 shrink-0"
-                  />
-                  <span className="truncate">{item.addedBy.displayName}</span>
-                </p>
+                {item.source === 'autoplay' ? (
+                  <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+                    <Radio className="size-3.5 shrink-0" />
+                    <span className="truncate">Picked by autoplay</span>
+                  </p>
+                ) : (
+                  <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+                    <span className="shrink-0">Added by</span>
+                    <UserAvatar
+                      avatar={item.addedBy.avatar}
+                      name={item.addedBy.displayName}
+                      className="size-4 shrink-0"
+                    />
+                    <span className="truncate">{item.addedBy.displayName}</span>
+                  </p>
+                )}
               </div>
             </>
           ) : (

@@ -201,6 +201,47 @@ export function createSearchService({
     );
   }
 
+  /** The video someone already matched to the song, if it still plays. `known` is its id either way. */
+  async function knownMatch(
+    catalogId: string,
+  ): Promise<{ known: string | null; track: Track | null }> {
+    const known = await matches.find(catalogId);
+    if (!known) return { known, track: null };
+    const track = (await youtube.getVideos([known])).get(known);
+    if (!track?.embeddable) return { known, track: null };
+    await count('match_cache');
+    return { known, track: toTrack(track) };
+  }
+
+  /** A video from the link sources, remembered for everyone; `null` when none had one. */
+  async function linkedMatch(song: CatalogTrack, skip: string | null): Promise<Track | null> {
+    for (const source of songLinks) {
+      const linked = await linkedVideo(source, song, skip);
+      if (!linked) continue;
+      await matches.save(song, linked.videoId);
+      await count('match_links');
+      const track = (await youtube.getVideos([linked.videoId])).get(linked.videoId) ?? linked;
+      return toTrack(track);
+    }
+    return null;
+  }
+
+  /**
+   * The video for a song without ever running a YouTube search: a match someone already made, or
+   * one from the link sources (1 quota unit at most). For autoplay, which has no person to charge.
+   */
+  async function matchWithoutSearch(song: CatalogTrack): Promise<Track | null> {
+    if (!settings.get('features.catalogSearch')) return null;
+    try {
+      const { known, track } = await knownMatch(song.id);
+      return track ?? (await linkedMatch(song, known));
+    } catch (err) {
+      // Out of quota or YouTube is down: no song this time.
+      if (err instanceof YouTubeError) return null;
+      throw err;
+    }
+  }
+
   /**
    * The video for a catalog song. A song someone already added is free; otherwise the link
    * sources are asked, and only then is one YouTube search run (with the usual limits). The match
@@ -210,24 +251,12 @@ export function createSearchService({
     if (!settings.get('features.catalogSearch')) {
       throw new SearchError('catalog_disabled', 'Song suggestions are turned off');
     }
-    const known = await matches.find(catalogId);
-    if (known) {
-      const track = (await youtube.getVideos([known])).get(known);
-      if (track?.embeddable) {
-        await count('match_cache');
-        return { status: 'matched', track: toTrack(track) };
-      }
-      // The video went away or stopped allowing embeds: look for another one below.
-    }
+    // The video may have gone away or stopped allowing embeds: then look for another one below.
+    const { known, track: knownTrack } = await knownMatch(catalogId);
+    if (knownTrack) return { status: 'matched', track: knownTrack };
     const song = await catalog.getTrack(catalogId).catch(catalogError);
-    for (const source of songLinks) {
-      const linked = await linkedVideo(source, song, known);
-      if (!linked) continue;
-      await matches.save(song, linked.videoId);
-      await count('match_links');
-      const track = (await youtube.getVideos([linked.videoId])).get(linked.videoId) ?? linked;
-      return { status: 'matched', track: toTrack(track) };
-    }
+    const linked = await linkedMatch(song, known);
+    if (linked) return { status: 'matched', track: linked };
     const { results } = await search(userId, `${song.artist} ${song.title}`);
     const match = pickMatch(
       song,
@@ -243,7 +272,7 @@ export function createSearchService({
     return { status: 'matched', track: toTrack(track) };
   }
 
-  return { search, suggest, charts, resolve };
+  return { search, suggest, charts, resolve, matchWithoutSearch };
 }
 
 export type SearchService = ReturnType<typeof createSearchService>;

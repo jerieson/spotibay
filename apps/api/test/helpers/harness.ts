@@ -26,6 +26,7 @@ import {
   createAuditStore,
 } from '../../src/services/admin-store.js';
 import { createAuditService } from '../../src/services/audit.js';
+import { createAutoplayService } from '../../src/services/autoplay.js';
 import * as schema from '../../src/db/schema.js';
 import { createIdentityService } from '../../src/services/identity.js';
 import { createPlaybackService } from '../../src/services/playback.js';
@@ -396,6 +397,14 @@ export async function createHarness(options: HarnessOptions = {}) {
     rooms,
     settings,
   });
+  const autoplay = createAutoplayService({
+    playback,
+    rooms,
+    presence,
+    recommendations,
+    matcher: search,
+    settings,
+  });
   const gifs = createGifService({ redis, settings, apiKey: KLIPY_TEST_KEY, fetch: fakeFetch });
   const chat = createChatService({
     store: createChatStore(db),
@@ -540,6 +549,7 @@ export async function createHarness(options: HarnessOptions = {}) {
 
   async function close() {
     lifecycle.stop();
+    autoplay.stop();
     playback.stop();
     for (const s of sockets) s.disconnect();
     // Disconnects trigger presence cleanup on the server; let it finish before the stores go away.
@@ -573,6 +583,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     deezerChart,
     artistRadios,
     recommendations,
+    autoplay,
     searchRegions,
     songLinks,
     songLinkCalls,

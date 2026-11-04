@@ -14,6 +14,7 @@ import {
   createAuditStore,
 } from './services/admin-store.js';
 import { createAuditService } from './services/audit.js';
+import { createAutoplayService } from './services/autoplay.js';
 import { createChatService } from './services/chat.js';
 import { createChatStore } from './services/chat-store.js';
 import { createGifService } from './services/gifs.js';
@@ -98,6 +99,14 @@ const playback = createPlaybackService({
   youtube,
   presence,
   rooms,
+  settings,
+});
+const autoplay = createAutoplayService({
+  playback,
+  rooms,
+  presence,
+  recommendations,
+  matcher: search,
   settings,
 });
 const gifs = createGifService({ redis, settings, apiKey: env.KLIPY_API_KEY });
@@ -193,6 +202,7 @@ async function shutdown(signal: string): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
   force.unref();
   try {
+    autoplay.stop();
     playback.stop();
     lifecycle.stop();
     // Closes the http server too, so no new connections arrive while sockets drain.

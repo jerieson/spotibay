@@ -88,6 +88,13 @@ function playOrder(
   ).map((o) => o.item);
 }
 
+/** Autoplay's pick waits only until a person adds something; it never counts against limits. */
+const isAutoplayPick = (r: ActiveQueueItem) =>
+  r.status === 'queued' && r.item.source === 'autoplay';
+
+/** Why `addAutoplay` did not queue a video. */
+export type AutoplaySkipReason = 'off' | 'not_needed' | 'unplayable';
+
 type EndReason = 'ended' | 'skipped' | 'unavailable';
 
 export interface TrackChange {
@@ -263,7 +270,8 @@ export function createPlaybackService({
     }
 
     return withLock(roomId, async () => {
-      const active = await queue.listActive(roomId);
+      const all = await queue.listActive(roomId);
+      const active = all.filter((r) => !isAutoplayPick(r));
       if (active.length >= settings.get('limits.maxQueueLength')) {
         throw new PlaybackError(
           'queue_limit',
@@ -280,6 +288,7 @@ export function createPlaybackService({
           `You already have ${mine.length} songs waiting. Add more once one of them plays.`,
         );
       }
+      await dropAutoplayPicks(all);
       const item = await queue.insert({ roomId, videoId, addedBy: userId });
       if (!item) throw new Error('queue insert returned no row');
       if ((await store.load(roomId)).status === 'idle') await advance(roomId, 'ended');
@@ -417,7 +426,8 @@ export function createPlaybackService({
     const failedHere = await store.unplayable(roomId, wanted);
     const result: AddManyResult = { added: 0, duplicates: 0, unplayable: 0, overLimit: 0 };
     return withLock(roomId, async () => {
-      const active = await queue.listActive(roomId);
+      const all = await queue.listActive(roomId);
+      const active = all.filter((r) => !isAutoplayPick(r));
       const inQueue = new Set(active.map((r) => r.item.track.videoId));
       let total = active.length;
       let mine = active.filter(
@@ -437,6 +447,7 @@ export function createPlaybackService({
         } else if (total >= maxTotal || (!exempt && mine >= maxMine)) {
           result.overLimit += 1;
         } else {
+          if (result.added === 0) await dropAutoplayPicks(all);
           await queue.insert({ roomId, videoId, addedBy: userId });
           inQueue.add(videoId);
           total += 1;
@@ -450,6 +461,38 @@ export function createPlaybackService({
         else await publishQueue(roomId);
       }
       return result;
+    });
+  }
+
+  /** Takes autoplay's pick out of the queue now that a person added something. Lock held. */
+  async function dropAutoplayPicks(rows: ActiveQueueItem[]) {
+    const at = new Date(now());
+    for (const row of rows.filter(isAutoplayPick)) await queue.finish(row.item.id, 'removed', at);
+  }
+
+  /**
+   * Queues a video for autoplay, credited to the host, if the room still wants it: autoplay is on
+   * and nothing is queued (someone may have added a song meanwhile). Starts it on an idle room.
+   * The video must already be known (looked up through YouTube).
+   */
+  function addAutoplay(roomId: string, videoId: string): Promise<QueueItem | AutoplaySkipReason> {
+    return withLock(roomId, async () => {
+      const room = await rooms.findById(roomId);
+      if (!room?.autoplay || room.closedAt) return 'off';
+      const active = await queue.listActive(roomId);
+      if (active.some((r) => r.status === 'queued')) return 'not_needed';
+      if (active.some((r) => r.item.track.videoId === videoId)) return 'unplayable';
+      if ((await store.unplayable(roomId, [videoId])).has(videoId)) return 'unplayable';
+      const item = await queue.insert({
+        roomId,
+        videoId,
+        addedBy: room.ownerId,
+        source: 'autoplay',
+      });
+      if (!item) throw new Error('queue insert returned no row');
+      if ((await store.load(roomId)).status === 'idle') await advance(roomId, 'ended');
+      else await publishQueue(roomId);
+      return item;
     });
   }
 
@@ -529,6 +572,7 @@ export function createPlaybackService({
     snapshot,
     add,
     addMany,
+    addAutoplay,
     vote,
     remove,
     reorder,

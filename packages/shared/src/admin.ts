@@ -24,6 +24,8 @@ export const settingDescriptions: Record<SettingKey, string> = {
     'Suggest songs from the Deezer catalog while typing. Off: search goes straight to YouTube.',
   'features.gifs':
     'Let people send GIFs and stickers in chat (from KLIPY). Needs KLIPY_API_KEY on the server.',
+  'features.autoplay':
+    'Let hosts turn on autoplay, which queues a related song when the queue runs out. Uses no YouTube searches.',
   'limits.maxActiveRooms': 'Open rooms allowed at the same time.',
   'limits.maxUsersPerRoom': 'People allowed in one room.',
   'limits.maxQueueItemsPerUser': 'Tracks one person can have in a room queue at once.',

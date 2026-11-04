@@ -80,6 +80,7 @@ describe('expectedPositionMs', () => {
     id: 'i',
     track: { videoId: 'v', title: 't', channelTitle: 'c', thumbnailUrl: 'u', durationSec: 100 },
     addedBy: { userId: 'u', displayName: 'n', avatar: { style: 'thumbs', seed: 's', options: {} } },
+    source: 'user',
     votes: {},
   } as const;
   const base: PlaybackState = {

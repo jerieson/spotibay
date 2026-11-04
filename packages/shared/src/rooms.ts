@@ -59,6 +59,7 @@ export const updateRoomBodySchema = z
     /** `null` removes the password. */
     password: roomPasswordSchema.nullable().optional(),
     queueMode: queueModeSchema.optional(),
+    autoplay: z.boolean().optional(),
   })
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'Nothing to update');
 export type UpdateRoomBody = z.infer<typeof updateRoomBodySchema>;
@@ -78,6 +79,8 @@ export const roomSchema = z.object({
   hasPassword: z.boolean(),
   hostId: z.string(),
   queueMode: queueModeSchema,
+  /** Queues related songs by itself when the queue runs out. */
+  autoplay: z.boolean(),
   createdAt: z.string(),
 });
 export type Room = z.infer<typeof roomSchema>;

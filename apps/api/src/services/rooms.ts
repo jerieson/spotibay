@@ -22,6 +22,7 @@ export interface RoomRow {
   passwordHash: string | null;
   ownerId: string;
   queueMode: 'fifo' | 'fair';
+  autoplay: boolean;
   createdAt: Date;
   closedAt: Date | null;
 }
@@ -40,7 +41,9 @@ export interface RoomStore {
   listOpen(): Promise<RoomRow[]>;
   update(
     id: string,
-    patch: Partial<Pick<RoomRow, 'name' | 'visibility' | 'passwordHash' | 'ownerId' | 'queueMode'>>,
+    patch: Partial<
+      Pick<RoomRow, 'name' | 'visibility' | 'passwordHash' | 'ownerId' | 'queueMode' | 'autoplay'>
+    >,
   ): Promise<RoomRow | null>;
   /** Resolves `false` when the room was already closed. */
   close(id: string): Promise<boolean>;
@@ -92,6 +95,7 @@ export function toRoom(row: RoomRow): Room {
     hasPassword: row.passwordHash !== null,
     hostId: row.ownerId,
     queueMode: row.queueMode,
+    autoplay: row.autoplay,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -175,6 +179,7 @@ export function createRoomService({
     if (body.name !== undefined) patch.name = body.name;
     if (body.visibility !== undefined) patch.visibility = body.visibility;
     if (body.queueMode !== undefined) patch.queueMode = body.queueMode;
+    if (body.autoplay !== undefined) patch.autoplay = body.autoplay;
     if (visibility === 'public') {
       if (typeof body.password === 'string') {
         throw new RoomError('invalid_request', 'Only private rooms can have a password');

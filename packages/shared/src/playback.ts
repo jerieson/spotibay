@@ -26,10 +26,15 @@ export type QueueMode = z.infer<typeof queueModeSchema>;
 export const voteValueSchema = z.union([z.literal(1), z.literal(-1)]);
 export type VoteValue = z.infer<typeof voteValueSchema>;
 
+/** `autoplay`: the room queued it when the queue ran out (credited to the host). */
+export const queueItemSourceSchema = z.enum(['user', 'autoplay']);
+export type QueueItemSource = z.infer<typeof queueItemSourceSchema>;
+
 export const queueItemSchema = z.object({
   id: z.string(),
   track: trackSchema,
   addedBy: queuePersonSchema,
+  source: queueItemSourceSchema.default('user'),
   /** userId -> vote. */
   votes: z.record(z.string(), voteValueSchema).default({}),
 });

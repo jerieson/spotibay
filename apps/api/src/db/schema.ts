@@ -26,6 +26,7 @@ export const queueItemStatus = pgEnum('queue_item_status', [
   'skipped',
   'removed',
 ]);
+export const queueItemSource = pgEnum('queue_item_source', ['user', 'autoplay']);
 export const banType = pgEnum('ban_type', ['user', 'ip']);
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -59,6 +60,8 @@ export const rooms = pgTable('rooms', {
     .notNull()
     .references(() => users.id),
   queueMode: queueMode('queue_mode').notNull().default('fifo'),
+  /** Queue a related song by itself when the queue runs out. */
+  autoplay: boolean('autoplay').notNull().default(false),
   createdAt: createdAt(),
   closedAt: timestamp('closed_at', { withTimezone: true }),
 });
@@ -99,6 +102,8 @@ export const queueItems = pgTable(
       .references(() => users.id),
     position: integer('position').notNull(),
     status: queueItemStatus('status').notNull().default('queued'),
+    /** `autoplay`: queued by the room itself (credited to the host), not by a person. */
+    source: queueItemSource('source').notNull().default('user'),
     createdAt: createdAt(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),

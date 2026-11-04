@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import type { HistoryEntry, QueueItem, VoteValue } from '@spotibay/shared';
+import type { HistoryEntry, QueueItem, QueueItemSource, VoteValue } from '@spotibay/shared';
 import type { Db } from '../db/client.js';
 import {
   apiQuotaUsage,
@@ -25,7 +25,12 @@ export interface ActiveQueueItem {
 
 export interface QueueStore {
   /** Appends to the end of the room's queue. */
-  insert(input: { roomId: string; videoId: string; addedBy: string }): Promise<QueueItem | null>;
+  insert(input: {
+    roomId: string;
+    videoId: string;
+    addedBy: string;
+    source?: QueueItemSource;
+  }): Promise<QueueItem | null>;
   /** Queued and playing items in play order. */
   listActive(roomId: string): Promise<ActiveQueueItem[]>;
   /** Sets or (with 0) clears a user's vote on an item. */
@@ -49,6 +54,7 @@ export function createQueueStore(db: Db): QueueStore {
     id: queueItems.id,
     status: queueItems.status,
     position: queueItems.position,
+    source: queueItems.source,
     endedAt: queueItems.endedAt,
     videoId: tracks.videoId,
     title: tracks.title,
@@ -63,6 +69,7 @@ export function createQueueStore(db: Db): QueueStore {
     id: string;
     status: string;
     position: number;
+    source: QueueItemSource;
     endedAt: Date | null;
     videoId: string;
     title: string;
@@ -83,6 +90,7 @@ export function createQueueStore(db: Db): QueueStore {
       durationSec: r.durationSec,
     },
     addedBy: { userId: r.userId, displayName: r.displayName, avatar: r.avatar },
+    source: r.source,
     votes: {},
   });
   const selectJoined = () =>
@@ -93,13 +101,14 @@ export function createQueueStore(db: Db): QueueStore {
       .innerJoin(users, eq(users.id, queueItems.addedBy));
 
   return {
-    async insert({ roomId, videoId, addedBy }) {
+    async insert({ roomId, videoId, addedBy, source = 'user' }) {
       const [row] = await db
         .insert(queueItems)
         .values({
           roomId,
           videoId,
           addedBy,
+          source,
           position: sql`(select coalesce(max(position), 0) + 1 from queue_items where room_id = ${roomId})`,
         })
         .returning({ id: queueItems.id });
