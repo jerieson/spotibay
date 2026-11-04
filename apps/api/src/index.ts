@@ -4,6 +4,7 @@ import { db, pool } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { env } from './env.js';
 import { logger } from './logger.js';
+import { createMetrics } from './lib/metrics.js';
 import { connectRedis, redis } from './redis.js';
 import { createAdminAuth } from './services/admin-auth.js';
 import { createAdminService } from './services/admin.js';
@@ -33,6 +34,7 @@ import { createRoomLifecycle } from './services/room-lifecycle.js';
 import { createRoomService } from './services/rooms.js';
 import { createSearchService } from './services/search.js';
 import { settings } from './services/settings.js';
+import { createMusicBrainzLinks, createOdesliLinks } from './services/song-links.js';
 import { createBanStore, createRoomStore, createUserStore } from './services/user-store.js';
 import { createLookupCharger, createQuotaFlag, createYouTubeService } from './services/youtube.js';
 import { createSocketServer } from './socket/server.js';
@@ -60,6 +62,16 @@ const rooms = createRoomService({
   nowPlaying: playbackStore.nowPlaying,
 });
 const quotaStore = createQuotaStore(db);
+const metrics = createMetrics(redis);
+const catalog = createCatalogService({ redis, settings });
+const songLinks = [
+  ...(env.ODESLI_API_KEY ? [createOdesliLinks({ redis, apiKey: env.ODESLI_API_KEY })] : []),
+  createMusicBrainzLinks({
+    redis,
+    isrc: catalog.isrc,
+    userAgent: `Spotibay/1.0 (${env.APP_URL ?? 'self-hosted'})`,
+  }),
+];
 const youtube = createYouTubeService({
   apiKey: env.YOUTUBE_API_KEY,
   tracks: createTrackStore(db),
@@ -72,8 +84,10 @@ const search = createSearchService({
   settings,
   quota: quotaStore,
   youtube,
-  catalog: createCatalogService({ redis, settings }),
+  catalog,
   matches: createCatalogMatchStore(db),
+  songLinks,
+  metrics,
 });
 const playback = createPlaybackService({
   store: playbackStore,

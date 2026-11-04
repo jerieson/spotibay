@@ -1,0 +1,9 @@
+- lets add suggested songs that follow the algorithm of already played songs or history.
+- sometimes the songs that shows on recommendations while searching is not the actual song or mv, can we change it so we can get the top tracks or searched here in philippines?
+- if theres limit on adding songs on queue atleast lets add of what songs we want to add from a playlist.
+- lets show friendly error messages everywhere ex. is the 502 error when quota meets.
+- 10k limit is still not enough for one day usage. how can we add quota? look for other source like reddit.
+
+admin side
+- dashboard too plain lets add more data in that screen.
+- can we use shadcn also for metrics and charts?

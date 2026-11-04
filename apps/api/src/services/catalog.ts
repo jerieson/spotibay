@@ -12,6 +12,8 @@ const SUGGEST_LIMIT = 8;
  */
 const DEEZER_WINDOW_SEC = 5;
 const DEEZER_CALLS_PER_WINDOW = 40;
+/** A recording's ISRC never changes. */
+const ISRC_TTL_SEC = 30 * 24 * 60 * 60;
 
 export type CatalogErrorCode = 'unavailable' | 'not_found';
 
@@ -28,6 +30,8 @@ export class CatalogError extends Error {
 const deezerTrackSchema = z.object({
   id: z.number().int().nonnegative(),
   readable: z.boolean().optional(),
+  /** Only in full track details, not in search results. */
+  isrc: z.string().optional(),
   title: z.string(),
   duration: z.number().int().nonnegative(),
   artist: z.object({ name: z.string() }),
@@ -155,7 +159,19 @@ export function createCatalogService({
     return song;
   }
 
-  return { search, getTrack };
+  /** The song's ISRC (recording code), from Deezer's full details; `null` when it has none. */
+  async function isrc(id: string): Promise<string | null> {
+    const key = `catalog:isrc:${id}`;
+    const cached = await redis.get(key);
+    if (cached !== null) return cached || null;
+    const parsed = deezerTrackSchema.safeParse(await call(`/track/${id}`));
+    if (!parsed.success) throw new CatalogError('unavailable', 'Unexpected Deezer response');
+    const code = parsed.data.isrc ?? '';
+    await redis.set(key, code, 'EX', ISRC_TTL_SEC);
+    return code || null;
+  }
+
+  return { search, getTrack, isrc };
 }
 
 export type CatalogService = ReturnType<typeof createCatalogService>;
@@ -198,6 +214,9 @@ const VARIANTS = [
 
 const hasWord = (haystack: string, word: string) => ` ${haystack} `.includes(` ${word} `);
 
+/** How far, in seconds, an upload's length may be from the song's and still be the song. */
+export const durationTolerance = (durationSec: number) => Math.max(10, durationSec * 0.08);
+
 /**
  * The upload of `song` among YouTube `candidates`, or `null` when none is a confident match.
  * A match has the song's title, names the artist (in the title or channel), lasts about as long,
@@ -211,7 +230,7 @@ export function pickMatch(
   const title = coreTitle(song.title);
   const songWords = words(song.title);
   const artist = compact(song.artist);
-  const tolerance = Math.max(10, song.durationSec * 0.08);
+  const tolerance = durationTolerance(song.durationSec);
   let best: { track: Track; score: number } | null = null;
   for (const track of candidates) {
     const text = words(`${track.title} ${track.channelTitle}`);

@@ -47,6 +47,8 @@ import { createGifService } from '../../src/services/gifs.js';
 import { createLibraryService } from '../../src/services/library.js';
 import { createPlaylistService } from '../../src/services/playlists.js';
 import { createSearchService } from '../../src/services/search.js';
+import { createMusicBrainzLinks, createOdesliLinks } from '../../src/services/song-links.js';
+import { createMetrics } from '../../src/lib/metrics.js';
 import { createSettingsService } from '../../src/services/settings.js';
 import { createBanStore, createRoomStore, createUserStore } from '../../src/services/user-store.js';
 import { createSocketServer } from '../../src/socket/server.js';
@@ -97,6 +99,7 @@ export interface FakeSong {
   album?: string;
   durationSec: number;
   readable?: boolean;
+  isrc?: string;
 }
 
 /** A GIF or sticker in the fake KLIPY. `host` overrides the media host (default static.klipy.com). */
@@ -162,11 +165,18 @@ export async function createHarness(options: HarnessOptions = {}) {
   const catalogSongs = new Map<string, FakeSong>();
   const catalogSearch = new Map<string, string[]>();
   const catalogCalls: string[] = [];
+  /** Fake Odesli: Deezer id -> linked videos by platform; unknown ids answer 404. */
+  const songLinks = new Map<string, { youtubeMusic?: string; youtube?: string }>();
+  const songLinkCalls: string[] = [];
+  /** Fake MusicBrainz: ISRC -> the URLs related to its recording; unknown ISRCs answer 404. */
+  const musicBrainz = new Map<string, string[]>();
+  const musicBrainzCalls: string[] = [];
   /** Set to make Deezer answer with this error code (status 200, like the real one). */
   const deezer: { errorCode: number | null } = { errorCode: null };
   const deezerTrack = (id: string, song: FakeSong) => ({
     id: Number(id),
     readable: song.readable ?? true,
+    isrc: song.isrc,
     title: song.title,
     duration: song.durationSec,
     artist: { name: song.artist },
@@ -214,6 +224,32 @@ export async function createHarness(options: HarnessOptions = {}) {
   const fakeFetch = (async (input: URL | string) => {
     const url = new URL(input);
     if (url.hostname === 'api.klipy.com') return klipyAnswer(url);
+    if (url.hostname === 'musicbrainz.org') {
+      const isrc = url.pathname.split('/').pop() ?? '';
+      musicBrainzCalls.push(isrc);
+      const urls = musicBrainz.get(isrc);
+      if (!urls) return Response.json({ error: 'Not Found' }, { status: 404 });
+      const relations = urls.map((resource) => ({ type: 'free streaming', url: { resource } }));
+      return Response.json({ isrc, recordings: [{ relations }] });
+    }
+    if (url.hostname === 'api.song.link') {
+      const id = (url.searchParams.get('url') ?? '').split('/').pop() ?? '';
+      songLinkCalls.push(id);
+      const links = songLinks.get(id);
+      if (!links) return Response.json({ statusCode: 404 }, { status: 404 });
+      const linksByPlatform = Object.fromEntries(
+        Object.entries(links).map(([platform, videoId]) => [
+          platform,
+          {
+            url:
+              platform === 'youtubeMusic'
+                ? `https://music.youtube.com/watch?v=${videoId}`
+                : `https://www.youtube.com/watch?v=${videoId}`,
+          },
+        ]),
+      );
+      return Response.json({ linksByPlatform });
+    }
     if (url.hostname === 'api.deezer.com') {
       catalogCalls.push(`${url.pathname}${url.search}`);
       if (deezer.errorCode !== null) {
@@ -270,6 +306,8 @@ export async function createHarness(options: HarnessOptions = {}) {
     return new Response(JSON.stringify({ items }), { status: 200 });
   }) as typeof fetch;
   const quotaStore = createQuotaStore(db);
+  const metrics = createMetrics(redis);
+  const catalog = createCatalogService({ redis, settings, fetch: fakeFetch });
   const youtube = createYouTubeService({
     apiKey: 'test-key',
     tracks: createTrackStore(db),
@@ -284,8 +322,18 @@ export async function createHarness(options: HarnessOptions = {}) {
     settings,
     quota: quotaStore,
     youtube,
-    catalog: createCatalogService({ redis, settings, fetch: fakeFetch }),
+    catalog,
     matches: createCatalogMatchStore(db),
+    songLinks: [
+      createOdesliLinks({ redis, apiKey: 'odesli-key', fetch: fakeFetch }),
+      createMusicBrainzLinks({
+        redis,
+        isrc: catalog.isrc,
+        userAgent: 'Spotibay/test',
+        fetch: fakeFetch,
+      }),
+    ],
+    metrics,
   });
   const playback = createPlaybackService({
     store: playbackStore,
@@ -466,6 +514,11 @@ export async function createHarness(options: HarnessOptions = {}) {
     catalogSearch,
     catalogCalls,
     deezer,
+    songLinks,
+    songLinkCalls,
+    musicBrainz,
+    musicBrainzCalls,
+    metrics,
     klipyItems,
     klipyCalls,
     klipy,

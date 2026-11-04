@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ResolveResponse, SuggestResponse, Track } from '@spotibay/shared';
 import { pickMatch } from '../src/services/catalog.js';
+import { quotaDate } from '../src/services/youtube.js';
 import { createHarness, type Harness } from './helpers/harness.js';
 
 const track = (over: Partial<Track>): Track => ({
@@ -80,8 +81,18 @@ const LIVE = 'livevideo01';
 beforeEach(async () => {
   await h.redis.flushdb();
   await h.db.execute('truncate table tracks, api_quota_usage cascade');
-  for (const m of [h.videos, h.searchResults, h.catalogSongs, h.catalogSearch]) m.clear();
+  for (const m of [
+    h.videos,
+    h.searchResults,
+    h.catalogSongs,
+    h.catalogSearch,
+    h.songLinks,
+    h.musicBrainz,
+  ])
+    m.clear();
   h.searchCalls.length = 0;
+  h.songLinkCalls.length = 0;
+  h.musicBrainzCalls.length = 0;
   h.youtubeCalls.length = 0;
   h.catalogCalls.length = 0;
   h.deezer.errorCode = null;
@@ -90,6 +101,7 @@ beforeEach(async () => {
     artist: 'The Weeknd',
     album: 'After Hours',
     durationSec: 200,
+    isrc: 'USUG11904206',
   });
   h.catalogSongs.set('42', { title: 'Obscure Song', artist: 'Nobody Knows', durationSec: 150 });
   h.catalogSearch.set('blinding', ['908604612']);
@@ -230,5 +242,56 @@ describe('POST /api/search/resolve', () => {
     // A song someone already matched is free even when the limit is spent.
     await resolve(await h.guest(), '908604612');
     expect((await resolve(g, '908604612')).body).toMatchObject({ status: 'matched' });
+  });
+
+  describe('through Odesli', () => {
+    const MV = 'musicvideo1';
+    beforeEach(() => {
+      h.videos.set(MV, {
+        title: 'The Weeknd - Blinding Lights (Official Video)',
+        channelTitle: 'TheWeekndVEVO',
+        durationSec: 262,
+      });
+    });
+
+    it('matches without a YouTube search, preferring the YouTube Music upload', async () => {
+      h.songLinks.set('908604612', { youtube: MV, youtubeMusic: TOPIC });
+      const res = await resolve(await h.guest(), '908604612');
+      expect(res.body).toMatchObject({ status: 'matched', track: { videoId: TOPIC } });
+      expect(h.searchCalls).toHaveLength(0);
+      const counts = await h.metrics.get(quotaDate(new Date()));
+      expect(counts).toMatchObject({ match_links: 1, match_search: 0 });
+      // Remembered for everyone, and Odesli isn't asked again.
+      await resolve(await h.guest(), '908604612');
+      expect(h.songLinkCalls).toEqual(['908604612']);
+      expect((await h.metrics.get(quotaDate(new Date()))).match_cache).toBe(1);
+    });
+
+    it('falls back to a search when the linked video is the wrong length', async () => {
+      h.songLinks.set('908604612', { youtube: MV });
+      const res = await resolve(await h.guest(), '908604612');
+      expect(res.body).toMatchObject({ status: 'matched', track: { videoId: TOPIC } });
+      expect(h.searchCalls).toEqual(['the weeknd blinding lights']);
+      expect((await h.metrics.get(quotaDate(new Date()))).match_search).toBe(1);
+    });
+  });
+
+  describe('through MusicBrainz', () => {
+    it('finds the video recorded for the song ISRC when Odesli has none', async () => {
+      h.musicBrainz.set('USUG11904206', [
+        'https://open.spotify.com/track/0sf12qNH5qcw8qpgymFOqD',
+        `https://music.youtube.com/watch?v=${TOPIC}`,
+      ]);
+      const res = await resolve(await h.guest(), '908604612');
+      expect(res.body).toMatchObject({ status: 'matched', track: { videoId: TOPIC } });
+      expect(h.searchCalls).toHaveLength(0);
+      expect(h.musicBrainzCalls).toEqual(['USUG11904206']);
+    });
+
+    it('skips songs without an ISRC', async () => {
+      await resolve(await h.guest(), '42');
+      expect(h.musicBrainzCalls).toHaveLength(0);
+      expect(h.searchCalls).toEqual(['nobody knows obscure song']);
+    });
   });
 });

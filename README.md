@@ -28,6 +28,16 @@ A few things to know:
 - Phones usually pause YouTube when the screen locks or the browser goes to the background.
 - Song search is lightly rate limited, and pasting a link always works.
 
+## YouTube quota
+
+YouTube's API allows 10,000 units a day, and each typed search costs 100. To stretch that:
+
+- A suggested song someone has already added is free for everyone after.
+- New suggested songs are looked up on [MusicBrainz](https://musicbrainz.org) by their ISRC first, which costs no search. Only some songs have their YouTube upload listed there.
+- With an `ODESLI_API_KEY` (ask developers@song.link), [Odesli](https://odesli.co) is asked too, which knows far more songs.
+- When the day's quota runs out, songs already in Spotibay keep working, and search says when it comes back (midnight Pacific Time).
+- For more headroom, ask Google for a higher limit with the [YouTube API quota extension form](https://support.google.com/youtube/contact/yt_api_form). Don't spread the load over several API keys: YouTube's developer policies forbid it.
+
 ## About
 
 Spotibay is a personal, self-hosted project.
@@ -35,4 +45,4 @@ Spotibay is a personal, self-hosted project.
 ## Credits
 
 - Reaction emoji: [Noto Emoji Animation](https://googlefonts.github.io/noto-emoji-animation/) by Google, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Resized for the web.
-- Song info: [Deezer](https://www.deezer.com). GIFs and stickers: [KLIPY](https://klipy.com).
+- Song info: [Deezer](https://www.deezer.com). Song links: [MusicBrainz](https://musicbrainz.org) and [Odesli](https://odesli.co). GIFs and stickers: [KLIPY](https://klipy.com).
