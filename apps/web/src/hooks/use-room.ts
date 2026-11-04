@@ -117,7 +117,10 @@ export function useRoomConnection(code: string, asAdmin = false) {
       );
       void navigate('/');
     };
-    const onSettings: ServerToClientEvents['settings:updated'] = ({ key }) => {
+    const onSettings: ServerToClientEvents['settings:updated'] = ({ key, value }) => {
+      if (key === 'limits.maxQueueItemsPerUser' && typeof value === 'number') {
+        useRoomStore.getState().setQueueLimit(value);
+      }
       if (key === 'site.maintenanceMode' || key === 'features.gifs') {
         void queryClient.invalidateQueries({ queryKey: siteKey });
       }

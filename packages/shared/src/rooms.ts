@@ -117,5 +117,7 @@ export const roomStateSchema = z.object({
   /** The latest messages, oldest first. Empty when chat is turned off. */
   chat: z.array(chatMessageSchema),
   sync: syncConfigSchema,
+  /** Songs a listener may have waiting at once; the host and DJs have no limit. */
+  queueLimitPerUser: z.number().int().positive(),
 });
 export type RoomState = z.infer<typeof roomStateSchema>;

@@ -420,6 +420,21 @@ describe('queue:addMany', () => {
     expect(await djRes).toMatchObject({ added: 3, overLimit: 0 });
   });
 
+  it('tells people the per-person limit when they join, and when it changes', async () => {
+    await h.settings.set('limits.maxQueueItemsPerUser', 3, null);
+    const { code } = await setupRoom();
+    const { socket, state } = await joinAs(await h.guest(), code);
+    expect(state.queueLimitPerUser).toBe(3);
+
+    const changed = next(
+      socket,
+      'settings:updated',
+      (u) => u.key === 'limits.maxQueueItemsPerUser',
+    );
+    await h.settings.set('limits.maxQueueItemsPerUser', 7, null);
+    expect((await changed).value).toBe(7);
+  });
+
   it('applies the room-wide limit to everyone', async () => {
     await h.settings.set('limits.maxQueueLength', 3, null);
     const { hostSocket } = await setupRoom();

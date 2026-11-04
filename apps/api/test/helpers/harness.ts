@@ -466,6 +466,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     chat,
     playlists,
     maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
+    queueLimitPerUser: () => settings.get('limits.maxQueueItemsPerUser'),
     eventLimit: options.rateLimits
       ? { redis, perSecond: () => settings.get('limits.socketEventsPerSecond') }
       : undefined,

@@ -33,6 +33,8 @@ interface RoomStoreState {
   chatOpen: boolean;
   unreadMentions: number;
   sync: SyncConfig;
+  /** Songs a listener may have waiting at once; see `queueSlots`. */
+  queueLimitPerUser: number;
   reset: () => void;
   setStatus: (status: RoomStatus, error?: SocketError | null) => void;
   setState: (state: RoomState) => void;
@@ -41,6 +43,7 @@ interface RoomStoreState {
   setPlayback: (playback: PlaybackState) => void;
   setQueue: (queue: QueueItem[]) => void;
   setSkipVotes: (skipVotes: SkipVotes) => void;
+  setQueueLimit: (limit: number) => void;
   addChat: (message: ChatMessage) => void;
   removeChat: (id: string) => void;
   setMessageReactions: (messageId: string, reactions: MessageReaction[]) => void;
@@ -61,6 +64,7 @@ const initial = {
   chatOpen: true,
   unreadMentions: 0,
   sync: { driftThresholdMs: 600, checkIntervalMs: 2000 } as SyncConfig,
+  queueLimitPerUser: 5,
 };
 
 export const useRoomStore = create<RoomStoreState>((set) => ({
@@ -79,6 +83,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       skipVotes: state.skipVotes,
       chat: state.chat,
       sync: state.sync,
+      queueLimitPerUser: state.queueLimitPerUser,
     }),
   // The server is the source of truth for roles, so our own role follows the member list.
   setMembers: (members) =>
@@ -92,6 +97,7 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
     set((s) => (playback.version > s.playback.version ? { playback } : {})),
   setQueue: (queue) => set({ queue }),
   setSkipVotes: (skipVotes) => set({ skipVotes }),
+  setQueueLimit: (queueLimitPerUser) => set({ queueLimitPerUser }),
   addChat: (message) =>
     set((s) =>
       s.chat.some((m) => m.id === message.id)

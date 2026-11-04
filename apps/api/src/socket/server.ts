@@ -64,6 +64,8 @@ export interface SocketServerDeps {
   /** Admin features: maintenance gate, kicks and bans, live settings, the `/admin` namespace. */
   admin?: { auth: AdminAuth; service: AdminService; settings: SettingsService };
   maxUsersPerRoom: () => number;
+  /** Songs a listener may have waiting at once, told to clients in `room:state`. */
+  queueLimitPerUser: () => number;
   /** Per-user cap on inbound events per second; the limiter is off when omitted. */
   eventLimit?: { redis: Redis; perSecond: () => number };
   /** Counts wrong room passwords so they can't be guessed; unlimited when omitted. */
@@ -236,6 +238,7 @@ export function createSocketServer(deps: SocketServerDeps) {
       skipVotes,
       chat: messages,
       sync: deps.syncConfig(),
+      queueLimitPerUser: deps.queueLimitPerUser(),
     };
   }
 

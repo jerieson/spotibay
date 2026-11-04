@@ -173,6 +173,7 @@ const io = createSocketServer({
   playlists,
   admin: { auth: adminAuth, service: adminService, settings },
   maxUsersPerRoom: () => settings.get('limits.maxUsersPerRoom'),
+  queueLimitPerUser: () => settings.get('limits.maxQueueItemsPerUser'),
   eventLimit: { redis, perSecond: () => settings.get('limits.socketEventsPerSecond') },
   passwordAttempts: { redis },
   allowedOrigin,

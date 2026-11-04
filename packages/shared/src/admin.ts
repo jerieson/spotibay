@@ -70,6 +70,7 @@ export const publicSettingKeys = [
   'features.search',
   'features.gifs',
   'limits.chatMessageMaxLength',
+  'limits.maxQueueItemsPerUser',
   'site.maintenanceMode',
   'site.announcement',
 ] as const satisfies readonly SettingKey[];
