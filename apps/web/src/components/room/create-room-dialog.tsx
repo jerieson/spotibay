@@ -6,6 +6,7 @@ import {
   ROOM_NAME_MAX,
   ROOM_PASSWORD_MAX,
   ROOM_PASSWORD_MIN,
+  type CatalogTrack,
   type RoomVisibility,
 } from '@spotibay/shared';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -23,11 +24,26 @@ import { Label } from '@/components/ui/label';
 import { createRoom } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { friendlyError } from '@/lib/errors';
+import type { QueueSongState } from '@/hooks/use-queue-song-on-join';
 
-export function CreateRoomDialog() {
+/**
+ * Creates a room and opens it. With `song` (and `open` controlled by the caller, so there's no
+ * trigger button) the song is queued once the room opens.
+ */
+export function CreateRoomDialog({
+  song,
+  open: openProp,
+  onOpenChange,
+}: {
+  song?: CatalogTrack | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+} = {}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   const [name, setName] = useState('');
   const [visibility, setVisibility] = useState<RoomVisibility>('public');
   const [password, setPassword] = useState('');
@@ -37,7 +53,8 @@ export function CreateRoomDialog() {
     onSuccess: (room) => {
       void qc.invalidateQueries({ queryKey: ['rooms'] });
       setOpen(false);
-      void navigate(`/r/${room.code}`);
+      const state: QueueSongState | undefined = song ? { queueSong: song } : undefined;
+      void navigate(`/r/${room.code}`, { state });
     },
   });
 
@@ -52,16 +69,20 @@ export function CreateRoomDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="lg" className="rounded-full">
-          <Plus /> Create a room
-        </Button>
-      </DialogTrigger>
+      {openProp === undefined && (
+        <DialogTrigger asChild>
+          <Button size="lg" className="rounded-full">
+            <Plus /> Create a room
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create a room</DialogTitle>
+          <DialogTitle>{song ? `Start a room with “${song.title}”` : 'Create a room'}</DialogTitle>
           <DialogDescription>
-            You&apos;ll be the host. Share the code to invite people.
+            {song
+              ? `${song.artist}. It plays first once the room opens. Share the code to invite people.`
+              : "You'll be the host. Share the code to invite people."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">

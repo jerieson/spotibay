@@ -1,5 +1,6 @@
 import {
   chartsResponseSchema,
+  recommendationsResponseSchema,
   gifSearchResponseSchema,
   healthResponseSchema,
   likesResponseSchema,
@@ -20,6 +21,7 @@ import {
   suggestResponseSchema,
   type CatalogTrack,
   type ChartsResponse,
+  type RecommendationsResponse,
   type ChatMediaKind,
   type GifSearchResponse,
   type CreateRoomBody,
@@ -126,6 +128,14 @@ export async function suggestTracks(q: string): Promise<CatalogTrack[]> {
 
 export function fetchCharts(): Promise<ChartsResponse> {
   return request(chartsResponseSchema, '/api/search/charts');
+}
+
+/** How long suggestions stay fresh; the server keeps them for ten minutes too. */
+export const RECOMMENDATIONS_STALE_MS = 10 * 60 * 1000;
+
+/** Songs picked from what you played, or the top chart before you've played anything. */
+export function fetchRecommendations(): Promise<RecommendationsResponse> {
+  return request(recommendationsResponseSchema, '/api/recommendations');
 }
 
 export function resolveTrack(catalogId: string): Promise<ResolveResponse> {

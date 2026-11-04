@@ -2,6 +2,7 @@ import { Router, type Response } from 'express';
 import {
   resolveBodySchema,
   type ChartsResponse,
+  type RecommendationsResponse,
   searchQuerySchema,
   type ResolveBody,
   type SearchErrorCode,
@@ -11,6 +12,8 @@ import {
 import { validateBody, validateQuery } from '../lib/validate.js';
 import { logger } from '../logger.js';
 import { requireUser } from '../middleware/session.js';
+import { CatalogError } from '../services/catalog.js';
+import type { RecommendationService } from '../services/recommendations.js';
 import { SearchError, type SearchService } from '../services/search.js';
 import { YouTubeError } from '../services/youtube.js';
 
@@ -43,7 +46,13 @@ function sendError(res: Response, err: unknown) {
   throw err;
 }
 
-export function createSearchRouter({ search }: { search: SearchService }) {
+export interface SearchRouterDeps {
+  search: SearchService;
+  /** Mounts `GET /recommendations` when provided. */
+  recommendations?: Pick<RecommendationService, 'enabled' | 'forUser'>;
+}
+
+export function createSearchRouter({ search, recommendations }: SearchRouterDeps) {
   const router = Router();
 
   router.get('/search', requireUser, validateQuery(searchQuerySchema), async (req, res) => {
@@ -79,6 +88,28 @@ export function createSearchRouter({ search }: { search: SearchService }) {
       sendError(res, err);
     }
   });
+
+  if (recommendations) {
+    router.get('/recommendations', requireUser, async (req, res) => {
+      if (!recommendations.enabled()) {
+        res.status(statusByCode.catalog_disabled).json({
+          error: 'catalog_disabled',
+          message: 'Song suggestions are turned off',
+        });
+        return;
+      }
+      try {
+        const body: RecommendationsResponse = await recommendations.forUser(req.user!.id);
+        res.json(body);
+      } catch (err) {
+        if (!(err instanceof CatalogError)) throw err;
+        res.status(statusByCode.catalog_unavailable).json({
+          error: 'catalog_unavailable',
+          message: 'Suggestions are busy right now. Try again in a moment.',
+        });
+      }
+    });
+  }
 
   router.post('/search/resolve', requireUser, validateBody(resolveBodySchema), async (req, res) => {
     const { catalogId } = req.body as ResolveBody;

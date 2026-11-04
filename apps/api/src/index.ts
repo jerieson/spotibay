@@ -33,6 +33,7 @@ import {
 import { createRoomLifecycle } from './services/room-lifecycle.js';
 import { createRoomService } from './services/rooms.js';
 import { createSearchService } from './services/search.js';
+import { createRecommendationService } from './services/recommendations.js';
 import { settings } from './services/settings.js';
 import { createMusicBrainzLinks, createOdesliLinks } from './services/song-links.js';
 import { createBanStore, createRoomStore, createUserStore } from './services/user-store.js';
@@ -90,6 +91,7 @@ const search = createSearchService({
   songLinks,
   metrics,
 });
+const recommendations = createRecommendationService({ db, redis, catalog, settings });
 const playback = createPlaybackService({
   store: playbackStore,
   queue: createQueueStore(db),
@@ -138,6 +140,7 @@ const app = createApp({
   presence,
   playback,
   search,
+  recommendations,
   gifs,
   playlists,
   library,

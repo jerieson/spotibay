@@ -20,6 +20,7 @@ import type { LibraryService } from './services/library.js';
 import type { PlaybackService } from './services/playback.js';
 import type { PlaylistService } from './services/playlists.js';
 import type { Presence } from './services/presence.js';
+import type { RecommendationService } from './services/recommendations.js';
 import type { RoomService } from './services/rooms.js';
 import type { SearchService } from './services/search.js';
 import type { SettingsService } from './services/settings.js';
@@ -49,6 +50,8 @@ export interface AppDeps {
   playback?: Pick<PlaybackService, 'history'>;
   /** Search route is mounted when this is provided (requires `identity`). */
   search?: SearchService;
+  /** With `search`, mounts `GET /api/recommendations`. */
+  recommendations?: Pick<RecommendationService, 'enabled' | 'forUser'>;
   /** GIF/sticker search is mounted when this is provided (requires `identity`); also feeds `/api/site`. */
   gifs?: GifService;
   /** Playlist, likes and listening-history routes are mounted when both are provided. */
@@ -94,6 +97,7 @@ export function createApp({
   presence,
   playback,
   search,
+  recommendations,
   gifs,
   playlists,
   library,
@@ -208,7 +212,7 @@ export function createApp({
       createSessionRouter({ identity, wordFilter: wordFilter ?? (() => []), secureCookie }),
     );
     if (rooms) app.use('/api', createRoomsRouter({ rooms, presence, playback }));
-    if (search) app.use('/api', createSearchRouter({ search }));
+    if (search) app.use('/api', createSearchRouter({ search, recommendations }));
     if (gifs) app.use('/api', createGifsRouter({ gifs }));
     if (playlists && library) {
       app.use('/api', createLibraryRouter({ playlists, library, rooms, presence, playback }));

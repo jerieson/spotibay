@@ -22,7 +22,14 @@ import {
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { fetchCharts, resolveTrack, searchTracks, suggestTracks } from '@/lib/api';
+import {
+  fetchCharts,
+  fetchRecommendations,
+  RECOMMENDATIONS_STALE_MS,
+  resolveTrack,
+  searchTracks,
+  suggestTracks,
+} from '@/lib/api';
 import { friendlyError } from '@/lib/errors';
 import { formatDuration } from '@/lib/format';
 import { socket } from '@/lib/socket';
@@ -30,8 +37,8 @@ import { cn } from '@/lib/utils';
 
 const SUGGEST_DELAY_MS = 300;
 const CHARTS_STALE_MS = 30 * 60 * 1000;
-/** Chart songs shown before "Show all", so the library stays in reach. */
-const CHART_PREVIEW = 5;
+/** Songs shown per list before "Show all", so the library stays in reach. */
+const LIST_PREVIEW = 5;
 
 const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
 /** Countries whose English name takes "the". */
@@ -87,7 +94,6 @@ export function AddMusicSheet({
   const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
   const [youtube, setYoutube] = useState<YouTubeList | null>(null);
   const [showLink, setShowLink] = useState(false);
-  const [wholeChart, setWholeChart] = useState(false);
 
   const linkId = pastedVideoId(query.trim());
   const typed = useDebouncedValue(query.trim(), SUGGEST_DELAY_MS);
@@ -107,6 +113,13 @@ export function AddMusicSheet({
     queryFn: fetchCharts,
     enabled: open && browsing,
     staleTime: CHARTS_STALE_MS,
+    retry: false,
+  });
+  const forYou = useQuery({
+    queryKey: ['recommendations'],
+    queryFn: fetchRecommendations,
+    enabled: open && browsing,
+    staleTime: RECOMMENDATIONS_STALE_MS,
     retry: false,
   });
 
@@ -248,37 +261,26 @@ export function AddMusicSheet({
             </section>
           )}
 
+          {browsing && forYou.data?.basedOn === 'history' && forYou.data.suggestions.length > 0 && (
+            <SongSection
+              title="For you"
+              songs={forYou.data.suggestions}
+              note="Picked from what you've played. Song info from Deezer."
+              added={added}
+              resolving={resolve.isPending ? (resolve.variables?.id ?? null) : null}
+              onAdd={(song) => resolve.mutate(song)}
+            />
+          )}
+
           {browsing && charts.data && charts.data.suggestions.length > 0 && (
-            <section className="space-y-2" aria-label={chartTitle(charts.data.country)}>
-              <h3 className="text-sm font-semibold">{chartTitle(charts.data.country)}</h3>
-              <ul className="divide-y rounded-xl border">
-                {charts.data.suggestions
-                  .slice(0, wholeChart ? undefined : CHART_PREVIEW)
-                  .map((song) => (
-                    <SuggestionRow
-                      key={song.id}
-                      song={song}
-                      added={added.has(song.id)}
-                      pending={resolve.isPending && resolve.variables?.id === song.id}
-                      disabled={resolve.isPending}
-                      onAdd={() => resolve.mutate(song)}
-                    />
-                  ))}
-              </ul>
-              {!wholeChart && charts.data.suggestions.length > CHART_PREVIEW && (
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="h-auto px-0"
-                  onClick={() => setWholeChart(true)}
-                >
-                  Show all {charts.data.suggestions.length}
-                </Button>
-              )}
-              <p className="text-xs text-muted-foreground">
-                {charts.data.country ? 'Most played on Apple Music. ' : ''}Song info from Deezer.
-              </p>
-            </section>
+            <SongSection
+              title={chartTitle(charts.data.country)}
+              songs={charts.data.suggestions}
+              note={`${charts.data.country ? 'Most played on Apple Music. ' : ''}Song info from Deezer.`}
+              added={added}
+              resolving={resolve.isPending ? (resolve.variables?.id ?? null) : null}
+              onAdd={(song) => resolve.mutate(song)}
+            />
           )}
 
           {search.isPending && <p className="text-sm text-muted-foreground">Searching…</p>}
@@ -339,6 +341,49 @@ export function AddMusicSheet({
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** A titled list of catalog songs, the first few shown until "Show all". */
+function SongSection({
+  title,
+  songs,
+  note,
+  added,
+  resolving,
+  onAdd,
+}: {
+  title: string;
+  songs: CatalogTrack[];
+  note: string;
+  added: ReadonlySet<string>;
+  /** The song being looked up on YouTube, which disables the other Add buttons. */
+  resolving: string | null;
+  onAdd: (song: CatalogTrack) => void;
+}) {
+  const [all, setAll] = useState(false);
+  return (
+    <section className="space-y-2" aria-label={title}>
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <ul className="divide-y rounded-xl border">
+        {songs.slice(0, all ? undefined : LIST_PREVIEW).map((song) => (
+          <SuggestionRow
+            key={song.id}
+            song={song}
+            added={added.has(song.id)}
+            pending={resolving === song.id}
+            disabled={resolving !== null}
+            onAdd={() => onAdd(song)}
+          />
+        ))}
+      </ul>
+      {!all && songs.length > LIST_PREVIEW && (
+        <Button variant="link" size="sm" className="h-auto px-0" onClick={() => setAll(true)}>
+          Show all {songs.length}
+        </Button>
+      )}
+      <p className="text-xs text-muted-foreground">{note}</p>
+    </section>
   );
 }
 

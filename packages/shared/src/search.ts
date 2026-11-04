@@ -48,6 +48,15 @@ export const chartsResponseSchema = suggestResponseSchema.extend({
 });
 export type ChartsResponse = z.infer<typeof chartsResponseSchema>;
 
+/**
+ * `GET /api/recommendations`: songs picked from what you played (`history`), or the top chart
+ * while you haven't played anything yet (`chart`).
+ */
+export const recommendationsResponseSchema = suggestResponseSchema.extend({
+  basedOn: z.enum(['history', 'chart']),
+});
+export type RecommendationsResponse = z.infer<typeof recommendationsResponseSchema>;
+
 export const resolveBodySchema = z.object({ catalogId: catalogIdSchema });
 export type ResolveBody = z.infer<typeof resolveBodySchema>;
 

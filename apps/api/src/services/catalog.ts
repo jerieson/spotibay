@@ -25,8 +25,16 @@ const APPLE_CHART = 'https://rss.marketingtools.apple.com/api/v2';
  */
 const DEEZER_WINDOW_SEC = 5;
 const DEEZER_CALLS_PER_WINDOW = 40;
-/** A recording's ISRC never changes. */
+/** A recording's ISRC never changes, and neither does who it's by. */
 const ISRC_TTL_SEC = 30 * 24 * 60 * 60;
+const ARTIST_TTL_SEC = 30 * 24 * 60 * 60;
+/** An artist's radio (their songs mixed with similar artists'), refreshed daily. */
+const RADIO_SIZE = 25;
+const RADIO_TTL_SEC = 24 * 60 * 60;
+/** Which Deezer song a YouTube upload is; looked up once by title. */
+const FOR_VIDEO_TTL_SEC = 30 * 24 * 60 * 60;
+/** How much longer than the song its music video may run and still be taken for it. */
+const MV_STRETCH = 1.35;
 
 export type CatalogErrorCode = 'unavailable' | 'not_found';
 
@@ -49,7 +57,7 @@ const deezerTrackSchema = z.object({
   duration: z.number().int().nonnegative(),
   /** Popularity; higher is more played. */
   rank: z.number().optional(),
-  artist: z.object({ name: z.string() }),
+  artist: z.object({ id: z.number().int().nonnegative().optional(), name: z.string() }),
   album: z.object({
     title: z.string(),
     cover_medium: z.string().nullish(),
@@ -67,6 +75,15 @@ const DEEZER_NOT_FOUND = 800;
 const deezerSearchSchema = z.object({ data: z.array(z.unknown()).default([]) });
 
 const cachedSuggestionsSchema = z.array(catalogTrackSchema);
+
+/** A song on an artist's radio, with who it's by and how popular it is, for ranking. */
+export const radioSongSchema = z.object({
+  song: catalogTrackSchema,
+  artistId: z.string().nullable(),
+  rank: z.number(),
+});
+export type RadioSong = z.infer<typeof radioSongSchema>;
+const cachedRadioSchema = z.array(radioSongSchema);
 
 const appleChartSchema = z.object({
   feed: z.object({
@@ -153,13 +170,32 @@ export function createCatalogService({
     });
   }
 
-  /** Search answers carry ISRCs too, which saves song-link lookups a call later. */
-  async function rememberIsrcs(tracks: DeezerTrack[]) {
+  const artistKey = (id: string) => `catalog:artist:${id}`;
+
+  /**
+   * Who each song is by and, when the answer has it, its ISRC: saves a `/track` call later for
+   * song links and for suggestions based on what someone played.
+   */
+  async function rememberDetails(tracks: DeezerTrack[]) {
     const pipeline = redis.pipeline();
     for (const t of tracks) {
       if (t.isrc) pipeline.set(`catalog:isrc:${t.id}`, t.isrc, 'EX', ISRC_TTL_SEC);
+      if (t.artist.id !== undefined) {
+        pipeline.set(artistKey(String(t.id)), String(t.artist.id), 'EX', ARTIST_TTL_SEC);
+      }
     }
     await pipeline.exec();
+  }
+
+  /** Full details of one song from Deezer, remembered for later lookups. */
+  async function trackDetails(id: string): Promise<DeezerTrack> {
+    const parsed = deezerTrackSchema.safeParse(await call(`/track/${id}`));
+    if (!parsed.success) throw new CatalogError('unavailable', 'Unexpected Deezer response');
+    if (parsed.data.isrc === undefined) {
+      await redis.set(`catalog:isrc:${id}`, '', 'EX', ISRC_TTL_SEC);
+    }
+    await rememberDetails([parsed.data]);
+    return parsed.data;
   }
 
   /**
@@ -186,7 +222,7 @@ export function createCatalogService({
       .map(toCatalogTrack);
     await redis.set(cacheKey, JSON.stringify(songs), 'EX', settings.get('catalog.cacheTtlSec'));
     await remember(songs);
-    await rememberIsrcs(found);
+    await rememberDetails(found);
     return songs;
   }
 
@@ -200,11 +236,9 @@ export function createCatalogService({
         // Unreadable: ask Deezer again.
       }
     }
-    const parsed = deezerTrackSchema.safeParse(await call(`/track/${id}`));
-    if (!parsed.success) throw new CatalogError('unavailable', 'Unexpected Deezer response');
-    if (parsed.data.readable === false)
-      throw new CatalogError('not_found', 'That song is unavailable');
-    const song = toCatalogTrack(parsed.data);
+    const details = await trackDetails(id);
+    if (details.readable === false) throw new CatalogError('not_found', 'That song is unavailable');
+    const song = toCatalogTrack(details);
     await remember([song]);
     return song;
   }
@@ -214,11 +248,85 @@ export function createCatalogService({
     const key = `catalog:isrc:${id}`;
     const cached = await redis.get(key);
     if (cached !== null) return cached || null;
-    const parsed = deezerTrackSchema.safeParse(await call(`/track/${id}`));
-    if (!parsed.success) throw new CatalogError('unavailable', 'Unexpected Deezer response');
-    const code = parsed.data.isrc ?? '';
-    await redis.set(key, code, 'EX', ISRC_TTL_SEC);
-    return code || null;
+    return (await trackDetails(id)).isrc || null;
+  }
+
+  /** The Deezer id of the song's (main) artist; `null` when Deezer doesn't say. */
+  async function artistOf(id: string): Promise<string | null> {
+    const cached = await redis.get(artistKey(id));
+    if (cached !== null) return cached || null;
+    const details = await trackDetails(id);
+    if (details.artist.id === undefined) {
+      await redis.set(artistKey(id), '', 'EX', ARTIST_TTL_SEC);
+      return null;
+    }
+    return String(details.artist.id);
+  }
+
+  /**
+   * The artist's radio: some of their popular songs mixed with similar artists', in Deezer's
+   * order. One call a day per artist.
+   */
+  async function artistRadio(artistId: string): Promise<RadioSong[]> {
+    const key = `catalog:radio:${artistId}`;
+    const cached = await redis.get(key);
+    if (cached) {
+      try {
+        return cachedRadioSchema.parse(JSON.parse(cached));
+      } catch {
+        // Unreadable: ask Deezer again.
+      }
+    }
+    let found: DeezerTrack[];
+    try {
+      found = playable(await call(`/artist/${artistId}/radio`, { limit: String(RADIO_SIZE) }));
+    } catch (err) {
+      // An artist Deezer has no radio for is just an empty one.
+      if (err instanceof CatalogError && err.code === 'not_found') found = [];
+      else throw err;
+    }
+    const radio = found
+      .filter((t) => !isImitation(t, ''))
+      .map((t) => ({
+        song: toCatalogTrack(t),
+        artistId: t.artist.id === undefined ? null : String(t.artist.id),
+        rank: t.rank ?? 0,
+      }));
+    await redis.set(key, JSON.stringify(radio), 'EX', RADIO_TTL_SEC);
+    await remember(radio.map((r) => r.song));
+    await rememberDetails(found);
+    return radio;
+  }
+
+  /**
+   * The catalog song a YouTube upload is (one pasted as a link, say), or `null` when no Deezer
+   * result is confidently it. Looked up once per video by its cleaned-up title.
+   */
+  async function findForVideo(track: Track): Promise<CatalogTrack | null> {
+    const key = `catalog:forvideo:${track.videoId}`;
+    const cachedId = await redis.get(key);
+    if (cachedId !== null) return cachedId ? getTrack(cachedId).catch(() => null) : null;
+    const query = videoQuery(track);
+    const found = query ? playable(await call('/search/track', { q: query, limit: '5' })) : [];
+    const upload = words(`${track.title} ${track.channelTitle}`);
+    const match = found.find(
+      (t) =>
+        // A live, remix or karaoke entry is only the upload when the upload says so too.
+        !VARIANTS.some((v) => hasWord(words(t.title), v) && !hasWord(upload, v)) &&
+        !isImitation(t, upload) &&
+        pickMatch({ title: t.title, artist: t.artist.name, durationSec: t.duration }, [
+          // Music videos often run longer than the song (an intro, a skit at the end).
+          track.durationSec > t.duration && track.durationSec <= t.duration * MV_STRETCH + 10
+            ? { ...track, durationSec: t.duration }
+            : track,
+        ]) !== null,
+    );
+    await redis.set(key, match ? String(match.id) : '', 'EX', FOR_VIDEO_TTL_SEC);
+    if (!match) return null;
+    const song = toCatalogTrack(match);
+    await remember([song]);
+    await rememberDetails(found);
+    return song;
   }
 
   const chartKey = () => `catalog:chart:${settings.get('search.region') || 'global'}`;
@@ -244,6 +352,7 @@ export function createCatalogService({
     const found = playable(
       await call('/search/track', { q: `${words(artist)} ${coreTitle(entry.name)}`, limit: '5' }),
     );
+    await rememberDetails(found);
     const match = found.find(
       (t) =>
         coreTitle(t.title) === coreTitle(entry.name) &&
@@ -307,10 +416,10 @@ export function createCatalogService({
         chart = { country, songs: apple.songs };
         complete = apple.complete;
       } else {
-        const songs = playable(await call('/chart/0/tracks', { limit: String(CHART_SIZE) })).map(
-          toCatalogTrack,
-        );
+        const found = playable(await call('/chart/0/tracks', { limit: String(CHART_SIZE) }));
+        const songs = found.map(toCatalogTrack);
         await remember(songs);
+        await rememberDetails(found);
         chart = { country: null, songs };
       }
       await redis.set(
@@ -326,7 +435,7 @@ export function createCatalogService({
     return building;
   }
 
-  return { search, getTrack, isrc, topCharts };
+  return { search, getTrack, isrc, artistOf, artistRadio, findForVideo, topCharts };
 }
 
 export type CatalogService = ReturnType<typeof createCatalogService>;
@@ -367,6 +476,35 @@ const IMITATIONS = [
   '8d',
 ];
 
+/** Whether the entry imitates a song (karaoke, cover…) without `asked` (normalized) naming that. */
+function isImitation(t: DeezerTrack, asked: string): boolean {
+  // The song's own name can hold such a word ("Cover Me", or a single named after it); its
+  // version tags and credits can't.
+  const name = coreTitle(t.title);
+  const tags = t.title.match(/[([].*?[)\]]|\s+-\s+.*$/g)?.join(' ') ?? '';
+  const album = ` ${words(t.album.title)} `.replace(` ${name} `, ' ');
+  const text = words(`${tags} ${t.artist.name} ${album}`);
+  return IMITATIONS.some((v) => hasWord(text, v) && !hasWord(asked, v));
+}
+
+/** Words in upload titles that say what kind of video it is, not which song. */
+const VIDEO_NOISE =
+  /\b(official|music|lyrics?|lyric|video|audio|visualizer|mv|hd|hq|4k|full|version|with)\b/g;
+
+/**
+ * Deezer search words for a YouTube upload: "Cup of Joe - Multo (Official Music Video)" gives
+ * "cup of joe multo". A "Topic" channel's title is just the song, so its artist is added.
+ */
+function videoQuery(track: Pick<Track, 'title' | 'channelTitle'>): string {
+  const title = words(track.title.replace(/\s*[([].*?[)\]]/g, ' ').replace(/\|.*$/, ''))
+    .replace(VIDEO_NOISE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const topic = /^(.*) - topic$/i.exec(track.channelTitle.trim());
+  const artist = topic?.[1] ? words(topic[1]) : '';
+  return artist && !title.includes(artist) ? `${artist} ${title}` : title;
+}
+
 /**
  * Whether the title, artist and album hold every word of the query; the last one may be half
  * typed. Deezer also answers loose matches (lyrics, other spellings), which are only worth showing
@@ -391,15 +529,7 @@ function rankSuggestions(
   charted: ReadonlySet<string>,
 ): DeezerTrack[] {
   const asked = words(query);
-  const real = found.filter((t) => {
-    // The song's own name can hold such a word ("Cover Me", or a single named after it); its
-    // version tags and credits can't.
-    const name = coreTitle(t.title);
-    const tags = t.title.match(/[([].*?[)\]]|\s+-\s+.*$/g)?.join(' ') ?? '';
-    const album = ` ${words(t.album.title)} `.replace(` ${name} `, ' ');
-    const text = words(`${tags} ${t.artist.name} ${album}`);
-    return !IMITATIONS.some((v) => hasWord(text, v) && !hasWord(asked, v));
-  });
+  const real = found.filter((t) => !isImitation(t, asked));
   const named = real.filter((t) => namesQuery(asked, t));
   return (named.length > 0 ? named : real)
     .map((t, position) => ({

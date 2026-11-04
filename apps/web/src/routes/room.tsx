@@ -11,6 +11,7 @@ import { MemberList } from '@/components/room/member-list';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useQueueSongOnJoin } from '@/hooks/use-queue-song-on-join';
 import { useRoomConnection } from '@/hooks/use-room';
 import { useSession } from '@/hooks/use-session';
 import { useRoomStore } from '@/stores/room';
@@ -31,6 +32,7 @@ function Room({ code }: { code: string }) {
   const idle = useRoomStore((s) => !s.playback.item && s.queue.length === 0);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useState('chat');
+  useQueueSongOnJoin(status === 'joined');
 
   if (status === 'closed') return <Notice title="This room has been closed" />;
   if (status === 'failed') {

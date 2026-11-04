@@ -47,6 +47,7 @@ import { createGifService } from '../../src/services/gifs.js';
 import { createLibraryService } from '../../src/services/library.js';
 import { createPlaylistService } from '../../src/services/playlists.js';
 import { createSearchService } from '../../src/services/search.js';
+import { createRecommendationService } from '../../src/services/recommendations.js';
 import { createMusicBrainzLinks, createOdesliLinks } from '../../src/services/song-links.js';
 import { createMetrics } from '../../src/lib/metrics.js';
 import { createSettingsService } from '../../src/services/settings.js';
@@ -102,6 +103,8 @@ export interface FakeSong {
   isrc?: string;
   /** Deezer popularity. */
   rank?: number;
+  /** Deezer artist id. */
+  artistId?: string;
 }
 
 /** An entry of the fake Apple Music chart. */
@@ -186,6 +189,8 @@ export async function createHarness(options: HarnessOptions = {}) {
   const appleCharts = new Map<string, FakeChartEntry[]>();
   const appleChartCalls: string[] = [];
   const deezerChart: string[] = [];
+  /** Fake Deezer artist radios: artist id -> song ids; unknown artists answer "not found". */
+  const artistRadios = new Map<string, string[]>();
   /** Set to make Deezer answer with this error code (status 200, like the real one). */
   const deezer: { errorCode: number | null } = { errorCode: null };
   const deezerTrack = (id: string, song: FakeSong) => ({
@@ -195,7 +200,10 @@ export async function createHarness(options: HarnessOptions = {}) {
     title: song.title,
     duration: song.durationSec,
     rank: song.rank,
-    artist: { name: song.artist },
+    artist: {
+      ...(song.artistId === undefined ? {} : { id: Number(song.artistId) }),
+      name: song.artist,
+    },
     album: {
       title: song.album ?? `${song.title} (Single)`,
       cover_medium: `https://cdn-images.dzcdn.net/images/cover/${id}/250x250.jpg`,
@@ -286,6 +294,17 @@ export async function createHarness(options: HarnessOptions = {}) {
           }),
         });
       }
+      const radio = /^\/artist\/(\d+)\/radio$/.exec(url.pathname);
+      if (radio) {
+        const ids = artistRadios.get(radio[1]!);
+        if (!ids) return Response.json({ error: { code: 800 } });
+        return Response.json({
+          data: ids.flatMap((id) => {
+            const song = catalogSongs.get(id);
+            return song ? [deezerTrack(id, song)] : [];
+          }),
+        });
+      }
       if (url.pathname === '/search/track') {
         const ids = catalogSearch.get(url.searchParams.get('q') ?? '') ?? [];
         return Response.json({
@@ -368,6 +387,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     ],
     metrics,
   });
+  const recommendations = createRecommendationService({ db, redis, catalog, settings });
   const playback = createPlaybackService({
     store: playbackStore,
     queue: createQueueStore(db),
@@ -416,6 +436,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     presence,
     playback,
     search,
+    recommendations,
     gifs,
     playlists,
     library,
@@ -550,6 +571,8 @@ export async function createHarness(options: HarnessOptions = {}) {
     appleCharts,
     appleChartCalls,
     deezerChart,
+    artistRadios,
+    recommendations,
     searchRegions,
     songLinks,
     songLinkCalls,

@@ -2,11 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Users } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { roomCodeSchema } from '@spotibay/shared';
+import { roomCodeSchema, type CatalogTrack } from '@spotibay/shared';
 import { CreateRoomDialog } from '@/components/room/create-room-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { fetchRooms } from '@/lib/api';
+import { useSession } from '@/hooks/use-session';
+import { fetchRecommendations, fetchRooms, RECOMMENDATIONS_STALE_MS } from '@/lib/api';
 
 export function HomePage() {
   return (
@@ -29,6 +30,7 @@ export function HomePage() {
           <JoinByCode />
         </div>
       </section>
+      <ForYou />
       <PublicRooms />
     </div>
   );
@@ -66,6 +68,69 @@ function JoinByCode() {
         Join <ArrowRight />
       </Button>
     </form>
+  );
+}
+
+/** Songs picked from what you played (the top chart until then); tapping one starts a room. */
+function ForYou() {
+  const session = useSession();
+  const recs = useQuery({
+    queryKey: ['recommendations'],
+    queryFn: fetchRecommendations,
+    enabled: session.isSuccess,
+    staleTime: RECOMMENDATIONS_STALE_MS,
+    retry: false,
+  });
+  const [song, setSong] = useState<CatalogTrack | null>(null);
+
+  if (!recs.data || recs.data.suggestions.length === 0) return null;
+  const fromHistory = recs.data.basedOn === 'history';
+
+  return (
+    <section className="space-y-3" aria-labelledby="for-you-title">
+      <div>
+        <h2 id="for-you-title" className="font-display text-xl font-bold">
+          {fromHistory ? 'For you' : 'Popular right now'}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {fromHistory
+            ? "Picked from what you've played. Tap one to start a room with it."
+            : 'Play a few songs and these become picks for you. Tap one to start a room with it.'}
+        </p>
+      </div>
+      <ul className="flex snap-x gap-3 overflow-x-auto pb-2">
+        {recs.data.suggestions.map((s) => (
+          <li key={s.id} className="w-32 shrink-0 snap-start sm:w-36">
+            <button
+              type="button"
+              onClick={() => setSong(s)}
+              className="group w-full rounded-2xl p-1 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              aria-label={`Start a room with ${s.title} by ${s.artist}`}
+            >
+              {s.artworkUrl ? (
+                <img
+                  src={s.artworkUrl}
+                  alt=""
+                  loading="lazy"
+                  className="aspect-square w-full rounded-xl bg-muted object-cover"
+                />
+              ) : (
+                <div className="aspect-square w-full rounded-xl bg-muted" />
+              )}
+              <span className="mt-2 block truncate text-sm font-medium">{s.title}</span>
+              <span className="block truncate text-sm text-muted-foreground">{s.artist}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <CreateRoomDialog
+        song={song}
+        open={song !== null}
+        onOpenChange={(open) => {
+          if (!open) setSong(null);
+        }}
+      />
+    </section>
   );
 }
 
