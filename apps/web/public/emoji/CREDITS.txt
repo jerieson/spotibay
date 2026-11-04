@@ -1,4 +1,5 @@
 Noto Emoji Animation by Google
 https://googlefonts.github.io/noto-emoji-animation/
 License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
-Changes: resized to 72px; *-still.webp files are a single frame of each animation.
+Changes: resized to 72px; *-still.webp files are a single frame of each animation
+(a later frame where the first one is blank or doesn't show the emoji yet).

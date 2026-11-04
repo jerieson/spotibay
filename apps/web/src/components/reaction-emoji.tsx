@@ -12,6 +12,22 @@ const files: Record<Emoji, string> = {
   '🎉': 'party',
   '👍': 'thumbs-up',
   '🎶': 'notes',
+  '😍': 'heart-eyes',
+  '🥹': 'holding-tears',
+  '😭': 'sob',
+  '🤣': 'rofl',
+  '🥳': 'partying',
+  '😎': 'cool',
+  '🤯': 'mind-blown',
+  '😢': 'cry',
+  '💃': 'dancer',
+  '🎸': 'guitar',
+  '🙌': 'raised-hands',
+  '🤘': 'rock-on',
+  '🫶': 'heart-hands',
+  '💯': 'hundred',
+  '✨': 'sparkles',
+  '👀': 'eyes',
 };
 
 const prefersReducedMotion = () =>

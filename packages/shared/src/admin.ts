@@ -39,6 +39,8 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'limits.maxPlaylistImportItems': 'Most tracks imported from one YouTube playlist.',
   'limits.chatMessageMaxLength': 'Longest chat message, in characters.',
   'limits.chatMessagesPerMinute': 'Chat messages one person can send per minute.',
+  'limits.reactionsPer10Seconds':
+    'Floating reactions one person can send over the video per 10 seconds. Extra taps are dropped quietly.',
   'limits.requestsPerMinute': 'API requests one address can make per minute.',
   'limits.expensiveRequestsPerMinute':
     'Account, room and playlist-import requests one address can make per minute.',

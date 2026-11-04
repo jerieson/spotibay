@@ -6,6 +6,7 @@ import { roomCodeSchema, type CatalogTrack } from '@spotibay/shared';
 import { CreateRoomDialog } from '@/components/room/create-room-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { useSession } from '@/hooks/use-session';
 import { fetchRecommendations, fetchRooms, RECOMMENDATIONS_STALE_MS } from '@/lib/api';
 
@@ -98,31 +99,34 @@ function ForYou() {
             : 'Play a few songs and these become picks for you. Tap one to start a room with it.'}
         </p>
       </div>
-      <ul className="flex snap-x gap-3 overflow-x-auto pb-2">
-        {recs.data.suggestions.map((s) => (
-          <li key={s.id} className="w-32 shrink-0 snap-start sm:w-36">
-            <button
-              type="button"
-              onClick={() => setSong(s)}
-              className="group w-full rounded-2xl p-1 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={`Start a room with ${s.title} by ${s.artist}`}
-            >
-              {s.artworkUrl ? (
-                <img
-                  src={s.artworkUrl}
-                  alt=""
-                  loading="lazy"
-                  className="aspect-square w-full rounded-xl bg-muted object-cover"
-                />
-              ) : (
-                <div className="aspect-square w-full rounded-xl bg-muted" />
-              )}
-              <span className="mt-2 block truncate text-sm font-medium">{s.title}</span>
-              <span className="block truncate text-sm text-muted-foreground">{s.artist}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <ScrollArea type="auto" className="-mx-1 [&>[data-slot=scroll-area-viewport]]:snap-x">
+        <ul className="flex w-max gap-3 px-1 pb-3">
+          {recs.data.suggestions.map((s) => (
+            <li key={s.id} className="w-32 shrink-0 snap-start sm:w-36">
+              <button
+                type="button"
+                onClick={() => setSong(s)}
+                className="group w-full rounded-2xl p-1 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                aria-label={`Start a room with ${s.title} by ${s.artist}`}
+              >
+                {s.artworkUrl ? (
+                  <img
+                    src={s.artworkUrl}
+                    alt=""
+                    loading="lazy"
+                    className="aspect-square w-full rounded-xl bg-muted object-cover"
+                  />
+                ) : (
+                  <div className="aspect-square w-full rounded-xl bg-muted" />
+                )}
+                <span className="mt-2 block truncate text-sm font-medium">{s.title}</span>
+                <span className="block truncate text-sm text-muted-foreground">{s.artist}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
       <CreateRoomDialog
         song={song}
         open={song !== null}

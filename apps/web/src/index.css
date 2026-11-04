@@ -31,6 +31,9 @@
   --radius: 0.625rem;
   /* Chart marks: volt's hue stepped into the chart lightness band (validated against the card). */
   --chart-1: #5e7f00;
+  --scrollbar: oklch(0.78 0.015 120);
+  --scrollbar-hover: oklch(0.66 0.015 120);
+  color-scheme: light;
 }
 
 .dark {
@@ -54,6 +57,9 @@
   --input: oklch(1 0 0 / 16%);
   --ring: #ceff00;
   --chart-1: #7da200;
+  --scrollbar: oklch(0.32 0 0);
+  --scrollbar-hover: oklch(0.45 0 0);
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -89,6 +95,12 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* One thin, theme-colored scrollbar everywhere (Firefox, Chrome 121+, Edge). */
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+  *:hover {
+    scrollbar-color: var(--scrollbar-hover) transparent;
   }
   html {
     font-size: 106.25%;
@@ -96,6 +108,24 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
     font-weight: 450;
+  }
+}
+
+/* Safari has no scrollbar-color: style its scrollbars the same way. */
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: var(--scrollbar);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-hover);
   }
 }
 

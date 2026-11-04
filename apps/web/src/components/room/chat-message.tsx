@@ -133,7 +133,7 @@ function ReactPicker({ messageId }: { messageId: string }) {
         side="top"
         align="end"
         collisionPadding={16}
-        className="flex w-auto gap-0.5 rounded-full p-1"
+        className="grid w-auto grid-cols-8 gap-0.5 rounded-2xl p-1.5"
       >
         {REACTION_EMOJIS.map((emoji) => (
           <EmojiButton

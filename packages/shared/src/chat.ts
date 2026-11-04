@@ -3,11 +3,36 @@ import { avatarSchema } from './identity.js';
 
 /** Messages sent in `room:state`. */
 export const CHAT_HISTORY_LIMIT = 50;
-/** Reactions one user may send per window. */
-export const REACTION_LIMIT = 10;
+/** Reactions one user may send per window: the `limits.reactionsPer10Seconds` setting. */
 export const REACTION_WINDOW_SEC = 10;
-/** The only emojis `chat:react` accepts. */
-export const REACTION_EMOJIS = ['❤️', '🔥', '👏', '😂', '😮', '🎉', '👍', '🎶'] as const;
+/** The only emojis reactions accept; the first `QUICK_REACTION_COUNT` sit in the player bar. */
+export const REACTION_EMOJIS = [
+  '❤️',
+  '🔥',
+  '👏',
+  '😂',
+  '😮',
+  '🎉',
+  '👍',
+  '🎶',
+  '😍',
+  '🥹',
+  '😭',
+  '🤣',
+  '🥳',
+  '😎',
+  '🤯',
+  '😢',
+  '💃',
+  '🎸',
+  '🙌',
+  '🤘',
+  '🫶',
+  '💯',
+  '✨',
+  '👀',
+] as const;
+export const QUICK_REACTION_COUNT = 8;
 
 export const reactionEmojiSchema = z.enum(REACTION_EMOJIS);
 export type ReactionEmoji = z.infer<typeof reactionEmojiSchema>;

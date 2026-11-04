@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import {
   CHAT_HISTORY_LIMIT,
-  REACTION_LIMIT,
   REACTION_WINDOW_SEC,
   MAX_MENTIONS,
   MESSAGE_REACTION_LIMIT,
@@ -199,7 +198,7 @@ export function createChatService({
     const allowed = await hit(
       redis,
       `ratelimit:react:${userId}`,
-      REACTION_LIMIT,
+      settings.get('limits.reactionsPer10Seconds'),
       REACTION_WINDOW_SEC,
     );
     // Reactions are cheap and noisy; dropping the excess beats nagging with an error per tap.

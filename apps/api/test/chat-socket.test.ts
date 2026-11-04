@@ -179,13 +179,22 @@ describe('reactions', () => {
     expect((await err).code).toBe('invalid_payload');
   });
 
-  it('drops reactions beyond the rate limit', async () => {
+  it('accepts the extra emojis from the full picker', async () => {
+    const { hostSocket, friendSocket } = await setup();
+    const got = next(friendSocket, 'chat:reaction');
+    hostSocket.emit('chat:react', { emoji: '🫶' });
+    expect((await got).emoji).toBe('🫶');
+  });
+
+  it('drops reactions beyond the limit the admin set', async () => {
+    await h.settings.set('limits.reactionsPer10Seconds', 12, null);
     const { hostSocket, friendSocket } = await setup();
     const got: ChatReaction[] = [];
     friendSocket.on('chat:reaction', (r) => got.push(r));
     for (let i = 0; i < 15; i++) hostSocket.emit('chat:react', { emoji: '👏' });
     await sleep(500);
-    expect(got).toHaveLength(10);
+    expect(got).toHaveLength(12);
+    await h.settings.set('limits.reactionsPer10Seconds', 30, null);
   });
 
   it('is refused while features.reactions is off', async () => {
