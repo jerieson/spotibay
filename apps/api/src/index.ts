@@ -136,6 +136,8 @@ const adminService = createAdminService({
   playback,
   chat,
   settings,
+  metrics,
+  timeZone: env.ANALYTICS_TIMEZONE,
 });
 
 const app = createApp({

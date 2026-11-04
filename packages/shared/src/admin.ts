@@ -213,6 +213,54 @@ export const adminQuotaResponseSchema = z.object({
 });
 export type AdminQuotaResponse = z.infer<typeof adminQuotaResponseSchema>;
 
+/** Days in the dashboard's daily charts, and in its peak hours and top lists. */
+export const DASHBOARD_DAYS = 14;
+export const DASHBOARD_RECENT_DAYS = 7;
+export const DASHBOARD_TOP_TRACKS = 10;
+export const DASHBOARD_TOP_ROOMS = 5;
+
+const countSchema = z.number().int().nonnegative();
+const dayCountSchema = z.object({ date: z.string(), count: countSchema });
+
+export const adminDashboardSchema = z.object({
+  /** Days and hours below are in this zone (ANALYTICS_TIMEZONE). */
+  timeZone: z.string(),
+  totals: z.object({
+    users: countSchema,
+    newUsersToday: countSchema,
+    newUsersRecent: countSchema,
+    /** Seen in the last 24 hours. */
+    activeUsers: countSchema,
+    playlists: countSchema,
+    playsToday: countSchema,
+  }),
+  /** Oldest first, one entry per day (`DASHBOARD_DAYS`), including empty days. */
+  playsPerDay: z.array(dayCountSchema),
+  newUsersPerDay: z.array(dayCountSchema),
+  /** Plays by hour of day over `DASHBOARD_RECENT_DAYS`, hours 0 to 23. */
+  playsByHour: z.array(z.object({ hour: z.number().int().min(0).max(23), count: countSchema })),
+  topTracks: z.array(
+    z.object({
+      videoId: z.string(),
+      title: z.string(),
+      channelTitle: z.string(),
+      thumbnailUrl: z.string(),
+      plays: countSchema,
+    }),
+  ),
+  topRooms: z.array(
+    z.object({ code: z.string(), name: z.string(), open: z.boolean(), plays: countSchema }),
+  ),
+  /** How suggested songs found their video over `DASHBOARD_RECENT_DAYS` (Pacific days, like quota). */
+  matchSources: z.object({
+    cache: countSchema,
+    links: countSchema,
+    search: countSchema,
+    none: countSchema,
+  }),
+});
+export type AdminDashboard = z.infer<typeof adminDashboardSchema>;
+
 export const auditEntrySchema = z.object({
   id: z.number().int(),
   adminUsername: z.string().nullable(),

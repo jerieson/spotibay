@@ -1,7 +1,12 @@
 import { isIP } from 'node:net';
 import {
+  DASHBOARD_DAYS,
+  DASHBOARD_RECENT_DAYS,
+  DASHBOARD_TOP_ROOMS,
+  DASHBOARD_TOP_TRACKS,
   QUOTA_HISTORY_DAYS,
   type AdminBan,
+  type AdminDashboard,
   type AdminChatMessage,
   type AdminQuotaResponse,
   type AdminRoomDetail,
@@ -15,6 +20,7 @@ import {
 } from '@spotibay/shared';
 import type { AdminDataStore, AdminUserRow, ChatFilter } from './admin-store.js';
 import type { AuditFilter, AuditService } from './audit.js';
+import type { Metrics } from '../lib/metrics.js';
 import type { ChatService } from './chat.js';
 import type { PlaybackService } from './playback.js';
 import type { Presence } from './presence.js';
@@ -53,7 +59,16 @@ export interface AdminServiceDeps {
   playback: Pick<PlaybackService, 'snapshot'>;
   chat: Pick<ChatService, 'announceDeleted'>;
   settings: Pick<SettingsService, 'all' | 'set' | 'version'>;
+  /** Daily counters, for how suggested songs were matched. */
+  metrics?: Pick<Metrics, 'get'>;
+  /** The zone the dashboard's days and hours are counted in. */
+  timeZone?: string;
   now?: () => Date;
+}
+
+/** `YYYY-MM-DD` of `now` in `timeZone`. */
+export function localDate(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone }).format(now);
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -71,6 +86,8 @@ export function createAdminService({
   playback,
   chat,
   settings,
+  metrics,
+  timeZone = 'Asia/Manila',
   now = () => new Date(),
 }: AdminServiceDeps) {
   let control: AdminControl | null = null;
@@ -255,6 +272,69 @@ export function createAdminService({
     };
   }
 
+  /** Every day from `first` for `length` days, with the count `rows` has for it (0 when none). */
+  function everyDay(first: string, length: number, rows: { date: string; count: number }[]) {
+    const counts = new Map(rows.map((r) => [r.date, r.count]));
+    return Array.from({ length }, (_, i) => {
+      const date = shiftDate(first, i);
+      return { date, count: counts.get(date) ?? 0 };
+    });
+  }
+
+  async function matchSources(): Promise<AdminDashboard['matchSources']> {
+    const sources = { cache: 0, links: 0, search: 0, none: 0 };
+    if (!metrics) return sources;
+    const today = quotaDate(now());
+    const days = await Promise.all(
+      Array.from({ length: DASHBOARD_RECENT_DAYS }, (_, i) => metrics.get(shiftDate(today, -i))),
+    );
+    for (const day of days) {
+      sources.cache += day.match_cache;
+      sources.links += day.match_links;
+      sources.search += day.match_search;
+      sources.none += day.match_none;
+    }
+    return sources;
+  }
+
+  async function dashboard(): Promise<AdminDashboard> {
+    const at = now();
+    const today = localDate(at, timeZone);
+    const firstDay = shiftDate(today, -(DASHBOARD_DAYS - 1));
+    const [rows, sources] = await Promise.all([
+      store.dashboard({
+        timeZone,
+        today,
+        firstDay,
+        recentFirstDay: shiftDate(today, -(DASHBOARD_RECENT_DAYS - 1)),
+        activeSince: new Date(at.getTime() - DAY_MS),
+        topTracks: DASHBOARD_TOP_TRACKS,
+        topRooms: DASHBOARD_TOP_ROOMS,
+      }),
+      matchSources(),
+    ]);
+    const playsPerDay = everyDay(firstDay, DASHBOARD_DAYS, rows.playsPerDay);
+    const newUsersPerDay = everyDay(firstDay, DASHBOARD_DAYS, rows.newUsersPerDay);
+    const byHour = new Map(rows.playsByHour.map((r) => [r.hour, r.count]));
+    return {
+      timeZone,
+      totals: {
+        ...rows.totals,
+        newUsersToday: newUsersPerDay.at(-1)!.count,
+        playsToday: playsPerDay.at(-1)!.count,
+      },
+      playsPerDay,
+      newUsersPerDay,
+      playsByHour: Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        count: byHour.get(hour) ?? 0,
+      })),
+      topTracks: rows.topTracks,
+      topRooms: rows.topRooms,
+      matchSources: sources,
+    };
+  }
+
   async function updateSetting(adminId: string, key: SettingKey, value: unknown) {
     try {
       const change = await settings.set(key, value, adminId);
@@ -285,6 +365,7 @@ export function createAdminService({
       control = next;
     },
     stats,
+    dashboard,
     listRooms,
     getRoom,
     closeRoom,

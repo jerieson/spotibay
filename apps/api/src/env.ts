@@ -22,6 +22,21 @@ const envSchema = z.object({
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
   /** The public URL; when set, browser requests from any other origin are refused. */
   APP_URL: unsetIfEmpty(z.url()),
+  /** The zone the admin dashboard counts days and hours in (an IANA name). */
+  ANALYTICS_TIMEZONE: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z
+      .string()
+      .refine((tz) => {
+        try {
+          new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+          return true;
+        } catch {
+          return false;
+        }
+      }, 'ANALYTICS_TIMEZONE must be a time zone like Asia/Manila')
+      .default('Asia/Manila'),
+  ),
 });
 
 export const env = envSchema.parse(process.env);

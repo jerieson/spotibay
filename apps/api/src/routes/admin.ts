@@ -254,6 +254,11 @@ export function createAdminRouter({ auth, admin, redis, secureCookie }: AdminRou
   );
 
   router.get(
+    '/dashboard',
+    handle(async (_req, res) => void res.json(await admin.dashboard())),
+  );
+
+  router.get(
     '/quota',
     handle(async (_req, res) => void res.json(await admin.quota())),
   );

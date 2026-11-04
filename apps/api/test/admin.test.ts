@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { queueItems, tracks } from '../src/db/schema.js';
 import type {
   AdminBan,
+  AdminDashboard,
   AdminQuotaResponse,
   AdminRoomDetail,
   AdminRoomSummary,
@@ -549,6 +551,89 @@ describe('admin quota', () => {
     expect(new Set(dates).size).toBe(14);
     expect([...dates].sort()).toEqual(dates);
     expect(res.body.days[0]).toMatchObject({ units: 0, searchCalls: 0 });
+  });
+});
+
+describe('admin dashboard', () => {
+  const sum = (rows: { count: number }[]) => rows.reduce((n, r) => n + r.count, 0);
+
+  it('needs an admin session', async () => {
+    const guest = await h.guest();
+    const res = await fetch(`${h.baseUrl}/api/admin/dashboard`, {
+      headers: { cookie: guest.cookie },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('counts users, plays, top tracks and rooms, and how songs were matched', async () => {
+    const admin = await h.admin(freshIp());
+    const dashboard = async () => (await admin.api<AdminDashboard>('GET', '/dashboard')).body;
+    const before = await dashboard();
+
+    const host = await h.guest();
+    const code = await openRoom(host, { name: 'Chart room' });
+    const roomId = (await h.rooms.findByCode(code))!.id;
+    const track = (videoId: string, title: string) => ({
+      videoId,
+      title,
+      channelTitle: 'Artist',
+      durationSec: 200,
+      thumbnailUrl: 'https://i.ytimg.com/x.jpg',
+    });
+    await h.db
+      .insert(tracks)
+      .values([track('dashtrack01', 'Most played'), track('dashtrack02', 'Played once')])
+      .onConflictDoNothing();
+    const now = new Date();
+    const play = (videoId: string, endedAt: Date, status: 'played' | 'skipped' = 'played') => ({
+      roomId,
+      videoId,
+      addedBy: host.user.id,
+      position: 1,
+      status,
+      startedAt: endedAt,
+      endedAt,
+    });
+    await h.db.insert(queueItems).values([
+      play('dashtrack01', now),
+      play('dashtrack01', now),
+      play('dashtrack01', now),
+      play('dashtrack02', now),
+      // Inside the 14 days, but too old for the 7-day lists.
+      play('dashtrack02', new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000)),
+      // Skipped tracks aren't plays.
+      play('dashtrack02', now, 'skipped'),
+    ]);
+    await h.metrics.incr('match_links');
+    await h.metrics.incr('match_links');
+    await h.metrics.incr('match_search');
+
+    const after = await dashboard();
+    expect(after.timeZone).toBe('Asia/Manila');
+    expect(after.playsPerDay).toHaveLength(14);
+    expect(after.newUsersPerDay).toHaveLength(14);
+    expect(after.playsByHour.map((r) => r.hour)).toEqual([...Array(24).keys()]);
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(now);
+    expect(after.playsPerDay.at(-1)?.date).toBe(today);
+
+    expect(after.totals.playsToday - before.totals.playsToday).toBe(4);
+    expect(sum(after.playsPerDay) - sum(before.playsPerDay)).toBe(5);
+    expect(sum(after.playsByHour) - sum(before.playsByHour)).toBe(4);
+    expect(after.totals.users - before.totals.users).toBe(1);
+    expect(after.totals.newUsersToday - before.totals.newUsersToday).toBe(1);
+    expect(after.totals.activeUsers - before.totals.activeUsers).toBe(1);
+
+    const plays = (id: string) => after.topTracks.find((t) => t.videoId === id)?.plays;
+    expect(plays('dashtrack01')).toBe(3);
+    expect(plays('dashtrack02')).toBe(1);
+    expect(after.topRooms.find((r) => r.code === code)).toEqual({
+      code,
+      name: 'Chart room',
+      open: true,
+      plays: 4,
+    });
+    expect(after.matchSources.links - before.matchSources.links).toBe(2);
+    expect(after.matchSources.search - before.matchSources.search).toBe(1);
   });
 });
 

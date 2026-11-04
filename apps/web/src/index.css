@@ -29,6 +29,8 @@
   --ring: oklch(0.45 0.13 125);
   --volt-text: oklch(0.4 0.12 125);
   --radius: 0.625rem;
+  /* Chart marks: volt's hue stepped into the chart lightness band (validated against the card). */
+  --chart-1: #5e7f00;
 }
 
 .dark {
@@ -51,6 +53,7 @@
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 16%);
   --ring: #ceff00;
+  --chart-1: #7da200;
 }
 
 @theme inline {
@@ -77,6 +80,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

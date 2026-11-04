@@ -7,7 +7,10 @@ import {
   apiQuotaUsage,
   bans,
   chatMessages,
+  playlists,
+  queueItems,
   rooms,
+  tracks,
   users,
 } from '../db/schema.js';
 import type { AdminStore } from './admin-auth.js';
@@ -50,6 +53,34 @@ export interface AdminDataStore {
   /** Marks a message deleted. Resolves the room id, or `null` when there is nothing to delete. */
   deleteChatMessage(id: string, adminId: string): Promise<{ roomId: string } | null>;
   quotaSince(date: string): Promise<{ date: string; units: number; searchCalls: number }[]>;
+  dashboard(range: DashboardRange): Promise<DashboardRows>;
+}
+
+/** Days are `YYYY-MM-DD` in `timeZone`; each range runs from its first day through `today`. */
+export interface DashboardRange {
+  timeZone: string;
+  today: string;
+  firstDay: string;
+  recentFirstDay: string;
+  activeSince: Date;
+  topTracks: number;
+  topRooms: number;
+}
+
+export interface DashboardRows {
+  totals: { users: number; newUsersRecent: number; activeUsers: number; playlists: number };
+  /** Only days that have any. */
+  playsPerDay: { date: string; count: number }[];
+  newUsersPerDay: { date: string; count: number }[];
+  playsByHour: { hour: number; count: number }[];
+  topTracks: {
+    videoId: string;
+    title: string;
+    channelTitle: string;
+    thumbnailUrl: string;
+    plays: number;
+  }[];
+  topRooms: { code: string; name: string; open: boolean; plays: number }[];
 }
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -256,6 +287,95 @@ export function createAdminDataStore(db: Db): AdminDataStore {
         .where(and(eq(chatMessages.id, id), isNull(chatMessages.deletedAt)))
         .returning({ roomId: chatMessages.roomId });
       return row ?? null;
+    },
+    async dashboard({
+      timeZone,
+      today,
+      firstDay,
+      recentFirstDay,
+      activeSince,
+      topTracks,
+      topRooms,
+    }) {
+      const localDay = (column: typeof queueItems.endedAt | typeof users.createdAt) =>
+        sql<string>`to_char((${column} at time zone ${timeZone})::date, 'YYYY-MM-DD')`;
+      const since = (column: typeof queueItems.endedAt | typeof users.createdAt, day: string) =>
+        sql`(${column} at time zone ${timeZone})::date between ${day}::date and ${today}::date`;
+      const plays = (day: string) =>
+        and(eq(queueItems.status, 'played'), since(queueItems.endedAt, day));
+      const n = sql<number>`count(*)::int`;
+
+      const [
+        [userTotals],
+        [playlistTotal],
+        playsPerDay,
+        newUsersPerDay,
+        byHour,
+        tracksTop,
+        roomsTop,
+      ] = await Promise.all([
+        db
+          .select({
+            users: n,
+            newUsersRecent: sql<number>`(count(*) filter (where ${since(users.createdAt, recentFirstDay)}))::int`,
+            activeUsers: sql<number>`(count(*) filter (where ${users.lastSeenAt} >= ${activeSince}))::int`,
+          })
+          .from(users),
+        db.select({ playlists: n }).from(playlists),
+        db
+          .select({ date: localDay(queueItems.endedAt), count: n })
+          .from(queueItems)
+          .where(plays(firstDay))
+          .groupBy(sql`1`),
+        db
+          .select({ date: localDay(users.createdAt), count: n })
+          .from(users)
+          .where(since(users.createdAt, firstDay))
+          .groupBy(sql`1`),
+        db
+          .select({
+            hour: sql<number>`extract(hour from ${queueItems.endedAt} at time zone ${timeZone})::int`,
+            count: n,
+          })
+          .from(queueItems)
+          .where(plays(recentFirstDay))
+          .groupBy(sql`1`),
+        db
+          .select({
+            videoId: tracks.videoId,
+            title: tracks.title,
+            channelTitle: tracks.channelTitle,
+            thumbnailUrl: tracks.thumbnailUrl,
+            plays: n,
+          })
+          .from(queueItems)
+          .innerJoin(tracks, eq(tracks.videoId, queueItems.videoId))
+          .where(plays(recentFirstDay))
+          .groupBy(tracks.videoId)
+          .orderBy(desc(n), tracks.title)
+          .limit(topTracks),
+        db
+          .select({
+            code: rooms.code,
+            name: rooms.name,
+            open: sql<boolean>`${rooms.closedAt} is null`,
+            plays: n,
+          })
+          .from(queueItems)
+          .innerJoin(rooms, eq(rooms.id, queueItems.roomId))
+          .where(plays(recentFirstDay))
+          .groupBy(rooms.id)
+          .orderBy(desc(n), rooms.name)
+          .limit(topRooms),
+      ]);
+      return {
+        totals: { ...userTotals!, playlists: playlistTotal!.playlists },
+        playsPerDay,
+        newUsersPerDay,
+        playsByHour: byHour,
+        topTracks: tracksTop,
+        topRooms: roomsTop,
+      };
     },
     async quotaSince(date) {
       return db

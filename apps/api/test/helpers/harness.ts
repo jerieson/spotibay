@@ -436,6 +436,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     playback,
     chat,
     settings,
+    metrics,
   });
   const app = createApp({
     admin: { auth: adminAuth, service: adminService, redis, settings },
