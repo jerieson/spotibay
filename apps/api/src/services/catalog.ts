@@ -6,6 +6,19 @@ import type { SettingsService } from './settings.js';
 
 const DEEZER_API = 'https://api.deezer.com';
 const SUGGEST_LIMIT = 8;
+/** Deezer is asked for more than are shown, so imitations can be dropped and the rest re-ranked. */
+const SUGGEST_FETCH_LIMIT = 25;
+/** How much each place down Deezer's relevance order costs, against log10 of its popularity. */
+const POSITION_WEIGHT = 0.15;
+/** Bonus for a song on the current chart: it's probably the one people are typing. */
+const CHART_BOOST = 1;
+const CHART_SIZE = 20;
+const CHART_TTL_SEC = 6 * 60 * 60;
+/** A chart cut short (Deezer busy) is retried sooner. */
+const PARTIAL_CHART_TTL_SEC = 10 * 60;
+/** Which Deezer song an Apple chart entry is; neither changes. */
+const CHART_ENTRY_TTL_SEC = 30 * 24 * 60 * 60;
+const APPLE_CHART = 'https://rss.marketingtools.apple.com/api/v2';
 /**
  * Deezer allows about 50 requests per 5 seconds per address, and every visitor shares the
  * server's address, so stay under it with headroom.
@@ -34,6 +47,8 @@ const deezerTrackSchema = z.object({
   isrc: z.string().optional(),
   title: z.string(),
   duration: z.number().int().nonnegative(),
+  /** Popularity; higher is more played. */
+  rank: z.number().optional(),
   artist: z.object({ name: z.string() }),
   album: z.object({
     title: z.string(),
@@ -52,6 +67,19 @@ const DEEZER_NOT_FOUND = 800;
 const deezerSearchSchema = z.object({ data: z.array(z.unknown()).default([]) });
 
 const cachedSuggestionsSchema = z.array(catalogTrackSchema);
+
+const appleChartSchema = z.object({
+  feed: z.object({
+    results: z.array(z.object({ id: z.string(), name: z.string(), artistName: z.string() })),
+  }),
+});
+
+/** Popular songs in a country; `country` is `null` when it's Deezer's worldwide chart instead. */
+export const chartSchema = z.object({
+  country: z.string().nullable(),
+  songs: z.array(catalogTrackSchema),
+});
+export type Chart = z.infer<typeof chartSchema>;
 
 const toCatalogTrack = (t: DeezerTrack): CatalogTrack => ({
   id: String(t.id),
@@ -113,9 +141,34 @@ export function createCatalogService({
     await pipeline.exec();
   }
 
-  /** Playable songs matching `query` (already normalized), best first. */
+  /** Deezer tracks in an answer that can be played; one malformed entry doesn't hide the rest. */
+  function playable(body: unknown): DeezerTrack[] {
+    const parsed = deezerSearchSchema.safeParse(body);
+    if (!parsed.success) throw new CatalogError('unavailable', 'Unexpected Deezer response');
+    return parsed.data.data.flatMap((item) => {
+      const track = deezerTrackSchema.safeParse(item);
+      return track.success && track.data.readable !== false && track.data.duration > 0
+        ? [track.data]
+        : [];
+    });
+  }
+
+  /** Search answers carry ISRCs too, which saves song-link lookups a call later. */
+  async function rememberIsrcs(tracks: DeezerTrack[]) {
+    const pipeline = redis.pipeline();
+    for (const t of tracks) {
+      if (t.isrc) pipeline.set(`catalog:isrc:${t.id}`, t.isrc, 'EX', ISRC_TTL_SEC);
+    }
+    await pipeline.exec();
+  }
+
+  /**
+   * Playable songs matching `query` (already normalized), best first. Karaoke, cover and tribute
+   * entries are dropped unless the query asks for them, and Deezer's order is weighed against
+   * popularity, so the real recording beats a sound-alike that happens to match better.
+   */
   async function search(query: string): Promise<CatalogTrack[]> {
-    const cacheKey = `catalog:search:${query}`;
+    const cacheKey = `catalog:suggest:${query}`;
     const cached = await redis.get(cacheKey);
     if (cached) {
       try {
@@ -124,19 +177,16 @@ export function createCatalogService({
         // An unreadable entry is treated as a miss and overwritten below.
       }
     }
-    const parsed = deezerSearchSchema.safeParse(
-      await call('/search/track', { q: query, limit: String(SUGGEST_LIMIT) }),
+    const found = playable(
+      await call('/search/track', { q: query, limit: String(SUGGEST_FETCH_LIMIT) }),
     );
-    if (!parsed.success) throw new CatalogError('unavailable', 'Unexpected Deezer response');
-    // One malformed entry shouldn't hide the rest.
-    const songs = parsed.data.data.flatMap((item) => {
-      const track = deezerTrackSchema.safeParse(item);
-      return track.success && track.data.readable !== false && track.data.duration > 0
-        ? [toCatalogTrack(track.data)]
-        : [];
-    });
+    const charted = new Set((await cachedChart())?.songs.map((s) => s.id));
+    const songs = rankSuggestions(query, found, charted)
+      .slice(0, SUGGEST_LIMIT)
+      .map(toCatalogTrack);
     await redis.set(cacheKey, JSON.stringify(songs), 'EX', settings.get('catalog.cacheTtlSec'));
     await remember(songs);
+    await rememberIsrcs(found);
     return songs;
   }
 
@@ -171,7 +221,112 @@ export function createCatalogService({
     return code || null;
   }
 
-  return { search, getTrack, isrc };
+  const chartKey = () => `catalog:chart:${settings.get('search.region') || 'global'}`;
+
+  async function cachedChart(): Promise<Chart | null> {
+    const cached = await redis.get(chartKey());
+    if (!cached) return null;
+    try {
+      return chartSchema.parse(JSON.parse(cached));
+    } catch {
+      return null;
+    }
+  }
+
+  /** The Deezer song an Apple chart entry is, from a cached answer or one Deezer search. */
+  async function chartEntry(entry: { id: string; name: string; artistName: string }) {
+    const key = `catalog:apple:${entry.id}`;
+    const cachedId = await redis.get(key);
+    if (cachedId !== null) {
+      return cachedId ? getTrack(cachedId).catch(() => null) : null;
+    }
+    const artist = firstArtist(entry.artistName);
+    const found = playable(
+      await call('/search/track', { q: `${words(artist)} ${coreTitle(entry.name)}`, limit: '5' }),
+    );
+    const match = found.find(
+      (t) =>
+        coreTitle(t.title) === coreTitle(entry.name) &&
+        (compact(t.artist.name).includes(compact(artist)) ||
+          compact(artist).includes(compact(t.artist.name))),
+    );
+    await redis.set(key, match ? String(match.id) : '', 'EX', CHART_ENTRY_TTL_SEC);
+    if (!match) return null;
+    const song = toCatalogTrack(match);
+    await remember([song]);
+    return song;
+  }
+
+  /**
+   * Apple Music's most played songs in the country, found on Deezer one by one (each lookup is
+   * remembered). `null` when the chart can't be had, such as for a country Apple has no chart for.
+   */
+  async function appleChart(
+    country: string,
+  ): Promise<{ songs: CatalogTrack[]; complete: boolean } | null> {
+    const url = `${APPLE_CHART}/${country.toLowerCase()}/music/most-played/${CHART_SIZE}/songs.json`;
+    let body: unknown;
+    try {
+      const res = await fetchImpl(url);
+      if (!res.ok) return null;
+      body = await res.json();
+    } catch {
+      return null;
+    }
+    const parsed = appleChartSchema.safeParse(body);
+    if (!parsed.success || parsed.data.feed.results.length === 0) return null;
+    const songs: CatalogTrack[] = [];
+    for (const entry of parsed.data.feed.results) {
+      try {
+        const song = await chartEntry(entry);
+        if (song && !songs.some((s) => s.id === song.id)) songs.push(song);
+      } catch (err) {
+        // Deezer is busy: show what was found and finish the chart later.
+        if (err instanceof CatalogError && err.code === 'unavailable') {
+          return { songs, complete: false };
+        }
+        throw err;
+      }
+    }
+    return { songs, complete: true };
+  }
+
+  let building: Promise<Chart> | null = null;
+
+  /** The region's top songs (setting `search.region`), or Deezer's worldwide chart without one. */
+  async function topCharts(): Promise<Chart> {
+    const cached = await cachedChart();
+    if (cached) return cached;
+    // Everyone opening the sheet at once shares one build.
+    building ??= (async () => {
+      const country = settings.get('search.region');
+      const apple = country ? await appleChart(country) : null;
+      let chart: Chart;
+      let complete = true;
+      if (apple && apple.songs.length > 0) {
+        chart = { country, songs: apple.songs };
+        complete = apple.complete;
+      } else {
+        const songs = playable(await call('/chart/0/tracks', { limit: String(CHART_SIZE) })).map(
+          toCatalogTrack,
+        );
+        await remember(songs);
+        chart = { country: null, songs };
+      }
+      await redis.set(
+        chartKey(),
+        JSON.stringify(chart),
+        'EX',
+        complete ? CHART_TTL_SEC : PARTIAL_CHART_TTL_SEC,
+      );
+      return chart;
+    })().finally(() => {
+      building = null;
+    });
+    return building;
+  }
+
+  return { search, getTrack, isrc, topCharts };
 }
 
 export type CatalogService = ReturnType<typeof createCatalogService>;
@@ -187,6 +342,76 @@ function words(text: string): string {
 }
 
 const compact = (text: string) => words(text).replace(/ /g, '');
+
+/** "Cup of Joe & Janine Teñoso" -> "Cup of Joe": catalogs credit guests differently. */
+function firstArtist(artist: string): string {
+  return artist.split(/,|&| x | feat\.? | ft\.? | with /i)[0]?.trim() || artist;
+}
+
+/** Catalog entries that imitate a song rather than being it, unless the query asks for them. */
+const IMITATIONS = [
+  'karaoke',
+  'cover',
+  'covers',
+  'tribute',
+  'made famous',
+  'in the style of',
+  'originally performed',
+  'backing track',
+  'instrumental',
+  'lullaby',
+  'music box',
+  'nightcore',
+  'sped up',
+  'slowed',
+  '8d',
+];
+
+/**
+ * Whether the title, artist and album hold every word of the query; the last one may be half
+ * typed. Deezer also answers loose matches (lyrics, other spellings), which are only worth showing
+ * when nothing names the query.
+ */
+function namesQuery(asked: string, t: DeezerTrack): boolean {
+  const have = words(`${t.title} ${t.artist.name} ${t.album.title}`).split(' ');
+  const want = asked.split(' ').filter(Boolean);
+  return want.every((w, i) =>
+    i === want.length - 1 ? have.some((h) => h.startsWith(w)) : have.includes(w),
+  );
+}
+
+/**
+ * Deezer's matches for `query`, imitations dropped, best first: only songs naming every word of
+ * the query when there are any; then earlier in Deezer's relevance order is better, and so is
+ * more popular (log of its rank) or on the chart.
+ */
+function rankSuggestions(
+  query: string,
+  found: DeezerTrack[],
+  charted: ReadonlySet<string>,
+): DeezerTrack[] {
+  const asked = words(query);
+  const real = found.filter((t) => {
+    // The song's own name can hold such a word ("Cover Me", or a single named after it); its
+    // version tags and credits can't.
+    const name = coreTitle(t.title);
+    const tags = t.title.match(/[([].*?[)\]]|\s+-\s+.*$/g)?.join(' ') ?? '';
+    const album = ` ${words(t.album.title)} `.replace(` ${name} `, ' ');
+    const text = words(`${tags} ${t.artist.name} ${album}`);
+    return !IMITATIONS.some((v) => hasWord(text, v) && !hasWord(asked, v));
+  });
+  const named = real.filter((t) => namesQuery(asked, t));
+  return (named.length > 0 ? named : real)
+    .map((t, position) => ({
+      t,
+      score:
+        Math.log10((t.rank ?? 0) + 10) -
+        position * POSITION_WEIGHT +
+        (charted.has(String(t.id)) ? CHART_BOOST : 0),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .map(({ t }) => t);
+}
 
 /** The title without "(feat. …)", "[Remastered]" or "- Radio Edit" style suffixes. */
 function coreTitle(title: string): string {
@@ -210,6 +435,10 @@ const VARIANTS = [
   'tutorial',
   'hour',
   'hours',
+  'fan made',
+  'fanmade',
+  'reupload',
+  'tribute',
 ];
 
 const hasWord = (haystack: string, word: string) => ` ${haystack} `.includes(` ${word} `);
@@ -243,6 +472,8 @@ export function pickMatch(
     if (/ - topic$/i.test(track.channelTitle)) score += 3;
     else if (compact(track.channelTitle).includes(artist)) score += 2;
     if (hasWord(words(track.title), 'official')) score += 0.5;
+    // A lyric video is the song, but the official audio or video is the better pick.
+    if (/\blyrics?\b/.test(words(track.title)) && !/\blyrics?\b/.test(songWords)) score -= 1;
     // Strictly greater keeps YouTube's ranking on ties.
     if (!best || score > best.score) best = { track, score };
   }

@@ -193,6 +193,8 @@ export interface YouTubeServiceDeps {
   chargeLookup?: LookupCharger;
   /** Without one, a spent quota is only noticed when YouTube refuses each call. */
   quotaFlag?: QuotaFlag;
+  /** Two-letter country whose results searches favour; empty for none. */
+  region?: () => string;
   fetch?: typeof fetch;
   now?: () => Date;
 }
@@ -203,6 +205,7 @@ export function createYouTubeService({
   quota,
   chargeLookup,
   quotaFlag,
+  region = () => '',
   fetch: fetchImpl = fetch,
   now = () => new Date(),
 }: YouTubeServiceDeps) {
@@ -327,6 +330,8 @@ export function createYouTubeService({
     url.searchParams.set('videoEmbeddable', 'true');
     url.searchParams.set('maxResults', String(SEARCH_MAX_RESULTS));
     url.searchParams.set('q', query);
+    const regionCode = region();
+    if (regionCode) url.searchParams.set('regionCode', regionCode);
     url.searchParams.set('key', apiKey!);
     const res = await fetchImpl(url);
     await quota.add(quotaDate(now()), SEARCH_LIST_COST, 1);

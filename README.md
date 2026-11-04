@@ -45,4 +45,4 @@ Spotibay is a personal, self-hosted project.
 ## Credits
 
 - Reaction emoji: [Noto Emoji Animation](https://googlefonts.github.io/noto-emoji-animation/) by Google, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Resized for the web.
-- Song info: [Deezer](https://www.deezer.com). Song links: [MusicBrainz](https://musicbrainz.org) and [Odesli](https://odesli.co). GIFs and stickers: [KLIPY](https://klipy.com).
+- Song info: [Deezer](https://www.deezer.com). Top songs chart: [Apple Music](https://music.apple.com). Song links: [MusicBrainz](https://musicbrainz.org) and [Odesli](https://odesli.co). GIFs and stickers: [KLIPY](https://klipy.com).

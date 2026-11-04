@@ -42,6 +42,12 @@ export const catalogIdSchema = z.string().regex(/^\d{1,20}$/, 'Invalid catalog i
 export const suggestResponseSchema = z.object({ suggestions: z.array(catalogTrackSchema) });
 export type SuggestResponse = z.infer<typeof suggestResponseSchema>;
 
+/** `GET /api/search/charts`: popular songs; `country` is `null` for the worldwide chart. */
+export const chartsResponseSchema = suggestResponseSchema.extend({
+  country: z.string().nullable(),
+});
+export type ChartsResponse = z.infer<typeof chartsResponseSchema>;
+
 export const resolveBodySchema = z.object({ catalogId: catalogIdSchema });
 export type ResolveBody = z.infer<typeof resolveBodySchema>;
 

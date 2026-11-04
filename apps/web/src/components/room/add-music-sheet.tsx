@@ -22,13 +22,27 @@ import {
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { resolveTrack, searchTracks, suggestTracks } from '@/lib/api';
+import { fetchCharts, resolveTrack, searchTracks, suggestTracks } from '@/lib/api';
 import { friendlyError } from '@/lib/errors';
 import { formatDuration } from '@/lib/format';
 import { socket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
 
 const SUGGEST_DELAY_MS = 300;
+const CHARTS_STALE_MS = 30 * 60 * 1000;
+/** Chart songs shown before "Show all", so the library stays in reach. */
+const CHART_PREVIEW = 5;
+
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+/** Countries whose English name takes "the". */
+const NAMED_WITH_THE = new Set(['PH', 'US', 'GB', 'NL', 'AE', 'CZ', 'DO', 'BS', 'GM', 'MV']);
+
+/** "Top in the Philippines", or "Top songs" for the worldwide chart. */
+function chartTitle(country: string | null): string {
+  if (!country) return 'Top songs';
+  const name = regionNames.of(country) ?? country;
+  return `Top in ${NAMED_WITH_THE.has(country) ? 'the ' : ''}${name}`;
+}
 
 /** A pasted YouTube link (not just a word that happens to look like a video id). */
 const pastedVideoId = (text: string) => (/[./]/.test(text) ? parseVideoId(text) : null);
@@ -73,6 +87,7 @@ export function AddMusicSheet({
   const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
   const [youtube, setYoutube] = useState<YouTubeList | null>(null);
   const [showLink, setShowLink] = useState(false);
+  const [wholeChart, setWholeChart] = useState(false);
 
   const linkId = pastedVideoId(query.trim());
   const typed = useDebouncedValue(query.trim(), SUGGEST_DELAY_MS);
@@ -83,6 +98,15 @@ export function AddMusicSheet({
       open && youtube === null && !pastedVideoId(typed) && typed.length >= MIN_SUGGEST_QUERY_LENGTH,
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+  const browsing = youtube === null && query.trim() === '';
+  const charts = useQuery({
+    queryKey: ['charts'],
+    queryFn: fetchCharts,
+    enabled: open && browsing,
+    staleTime: CHARTS_STALE_MS,
     retry: false,
   });
 
@@ -221,6 +245,39 @@ export function AddMusicSheet({
                   Song info from Deezer. Not here? Press Enter to search YouTube.
                 </p>
               )}
+            </section>
+          )}
+
+          {browsing && charts.data && charts.data.suggestions.length > 0 && (
+            <section className="space-y-2" aria-label={chartTitle(charts.data.country)}>
+              <h3 className="text-sm font-semibold">{chartTitle(charts.data.country)}</h3>
+              <ul className="divide-y rounded-xl border">
+                {charts.data.suggestions
+                  .slice(0, wholeChart ? undefined : CHART_PREVIEW)
+                  .map((song) => (
+                    <SuggestionRow
+                      key={song.id}
+                      song={song}
+                      added={added.has(song.id)}
+                      pending={resolve.isPending && resolve.variables?.id === song.id}
+                      disabled={resolve.isPending}
+                      onAdd={() => resolve.mutate(song)}
+                    />
+                  ))}
+              </ul>
+              {!wholeChart && charts.data.suggestions.length > CHART_PREVIEW && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0"
+                  onClick={() => setWholeChart(true)}
+                >
+                  Show all {charts.data.suggestions.length}
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {charts.data.country ? 'Most played on Apple Music. ' : ''}Song info from Deezer.
+              </p>
             </section>
           )}
 

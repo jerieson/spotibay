@@ -1,4 +1,5 @@
 import {
+  chartsResponseSchema,
   gifSearchResponseSchema,
   healthResponseSchema,
   likesResponseSchema,
@@ -18,6 +19,7 @@ import {
   sessionResponseSchema,
   suggestResponseSchema,
   type CatalogTrack,
+  type ChartsResponse,
   type ChatMediaKind,
   type GifSearchResponse,
   type CreateRoomBody,
@@ -120,6 +122,10 @@ export async function suggestTracks(q: string): Promise<CatalogTrack[]> {
     `/api/search/suggest?q=${encodeURIComponent(q)}`,
   );
   return res.suggestions;
+}
+
+export function fetchCharts(): Promise<ChartsResponse> {
+  return request(chartsResponseSchema, '/api/search/charts');
 }
 
 export function resolveTrack(catalogId: string): Promise<ResolveResponse> {

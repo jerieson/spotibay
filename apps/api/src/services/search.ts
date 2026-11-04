@@ -11,7 +11,13 @@ import {
 import { z } from 'zod';
 import type { Metrics } from '../lib/metrics.js';
 import { hit } from '../lib/rate-limit.js';
-import { CatalogError, durationTolerance, pickMatch, type CatalogService } from './catalog.js';
+import {
+  CatalogError,
+  durationTolerance,
+  pickMatch,
+  type CatalogService,
+  type Chart,
+} from './catalog.js';
 import type { SongLinkSource } from './song-links.js';
 import type { SettingsService } from './settings.js';
 import {
@@ -56,7 +62,7 @@ export interface SearchServiceDeps {
     search(query: string): Promise<StoredTrack[]>;
     getVideos(videoIds: string[]): Promise<Map<string, StoredTrack>>;
   };
-  catalog: Pick<CatalogService, 'search' | 'getTrack'>;
+  catalog: Pick<CatalogService, 'search' | 'getTrack' | 'topCharts'>;
   matches: CatalogMatchStore;
   /** Asked in order for a song's video before a YouTube search is spent on it. */
   songLinks?: SongLinkSource[];
@@ -154,6 +160,14 @@ export function createSearchService({
     return catalog.search(query).catch(catalogError);
   }
 
+  /** The region's most played songs, to pick from before typing anything. No YouTube quota. */
+  async function charts(): Promise<Chart> {
+    if (!settings.get('features.catalogSearch')) {
+      throw new SearchError('catalog_disabled', 'Song suggestions are turned off');
+    }
+    return catalog.topCharts().catch(catalogError);
+  }
+
   /**
    * A video from `source`'s links for `song`, checked against YouTube (1 quota unit at most, not
    * a 100-unit search). `null` when it has none that is playable and about the right length.
@@ -229,7 +243,7 @@ export function createSearchService({
     return { status: 'matched', track: toTrack(track) };
   }
 
-  return { search, suggest, resolve };
+  return { search, suggest, charts, resolve };
 }
 
 export type SearchService = ReturnType<typeof createSearchService>;

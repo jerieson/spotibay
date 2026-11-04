@@ -78,6 +78,7 @@ const youtube = createYouTubeService({
   quota: quotaStore,
   chargeLookup: createLookupCharger(redis, () => settings.get('limits.videoLookupsPerUserPerDay')),
   quotaFlag: createQuotaFlag(redis),
+  region: () => settings.get('search.region'),
 });
 const search = createSearchService({
   redis,

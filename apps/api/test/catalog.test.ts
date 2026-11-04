@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { ResolveResponse, SuggestResponse, Track } from '@spotibay/shared';
+import type { ChartsResponse, ResolveResponse, SuggestResponse, Track } from '@spotibay/shared';
 import { pickMatch } from '../src/services/catalog.js';
 import { quotaDate } from '../src/services/youtube.js';
 import { createHarness, type Harness } from './helpers/harness.js';
@@ -67,6 +67,37 @@ describe('pickMatch', () => {
   });
 });
 
+describe('pickMatch uploads that only look like the song', () => {
+  const song = { title: 'Multo', artist: 'Cup of Joe', durationSec: 237 };
+
+  it('prefers a plain upload over a lyric video', () => {
+    const lyrics = track({
+      videoId: 'lyrics00000',
+      title: 'Cup of Joe - Multo (Lyrics)',
+      channelTitle: 'Lyric Planet',
+      durationSec: 237,
+    });
+    const plain = track({
+      videoId: 'plain000000',
+      title: 'Cup of Joe - Multo',
+      channelTitle: 'OPM Hits',
+      durationSec: 240,
+    });
+    expect(pickMatch(song, [lyrics, plain])).toBe(plain);
+    expect(pickMatch(song, [lyrics])).toBe(lyrics);
+  });
+
+  it('skips fan-made, reuploaded and tribute videos', () => {
+    expect(
+      pickMatch(song, [
+        track({ title: 'Cup of Joe - Multo (Fan Made MV)', channelTitle: 'x', durationSec: 237 }),
+        track({ title: 'Multo - Cup of Joe [reupload]', channelTitle: 'x', durationSec: 237 }),
+        track({ title: 'Multo (Cup of Joe tribute)', channelTitle: 'x', durationSec: 237 }),
+      ]),
+    ).toBeNull();
+  });
+});
+
 let h: Harness;
 beforeAll(async () => {
   h = await createHarness();
@@ -91,6 +122,10 @@ beforeEach(async () => {
   ])
     m.clear();
   h.searchCalls.length = 0;
+  h.searchRegions.length = 0;
+  h.appleCharts.clear();
+  h.appleChartCalls.length = 0;
+  h.deezerChart.length = 0;
   h.songLinkCalls.length = 0;
   h.musicBrainzCalls.length = 0;
   h.youtubeCalls.length = 0;
@@ -122,6 +157,7 @@ beforeEach(async () => {
   await h.settings.set('features.search', true, null);
   await h.settings.set('limits.searchesPerMinute', 5, null);
   await h.settings.set('search.dailySearchCallBudget', 95, null);
+  await h.settings.set('search.region', 'PH', null);
 });
 
 type Guest = Awaited<ReturnType<Harness['guest']>>;
@@ -293,5 +329,143 @@ describe('POST /api/search/resolve', () => {
       expect(h.musicBrainzCalls).toHaveLength(0);
       expect(h.searchCalls).toEqual(['nobody knows obscure song']);
     });
+  });
+});
+
+describe('suggestion ranking', () => {
+  beforeEach(() => {
+    h.catalogSongs.set('1', {
+      title: 'Multo (Karaoke Version)',
+      artist: 'Sing King',
+      durationSec: 237,
+      rank: 90000,
+    });
+    h.catalogSongs.set('2', {
+      title: 'Multo',
+      artist: 'Acoustic Covers PH',
+      album: 'OPM Covers',
+      durationSec: 230,
+      rank: 100000,
+    });
+    h.catalogSongs.set('3', { title: 'Multo', artist: 'Nobody', durationSec: 180, rank: 500 });
+    h.catalogSongs.set('4', {
+      title: 'Multo',
+      artist: 'Cup of Joe',
+      durationSec: 237,
+      rank: 414120,
+      isrc: 'PHV032412915',
+    });
+    h.catalogSongs.set('5', { title: 'Cover Me', artist: 'Bruce Springsteen', durationSec: 207 });
+    h.catalogSongs.set('8', {
+      title: 'Coracao De Estudante',
+      artist: 'Milton Nascimento',
+      durationSec: 200,
+      rank: 900000,
+    });
+    h.catalogSearch.set('multo', ['1', '2', '8', '3', '4']);
+    h.catalogSearch.set('multo karaoke', ['1', '4']);
+    h.catalogSearch.set('springsteen', ['5']);
+  });
+
+  it('drops karaoke, covers and loose matches and puts the popular recording first', async () => {
+    const g = await h.guest();
+    const res = await suggest(g, 'multo');
+    expect(res.body.suggestions.map((s) => s.id)).toEqual(['4', '3']);
+  });
+
+  it('keeps imitations the query asks for, and songs merely named like one', async () => {
+    const g = await h.guest();
+    expect((await suggest(g, 'multo karaoke')).body.suggestions.map((s) => s.id)).toEqual(['1']);
+    expect((await suggest(g, 'springsteen')).body.suggestions.map((s) => s.id)).toEqual(['5']);
+  });
+
+  it('remembers ISRCs from the search, so song links need no extra Deezer call', async () => {
+    const g = await h.guest();
+    await suggest(g, 'multo');
+    h.catalogCalls.length = 0;
+    h.musicBrainz.set('PHV032412915', ['https://music.youtube.com/watch?v=multotopic1']);
+    h.videos.set('multotopic1', {
+      title: 'Multo',
+      channelTitle: 'Cup of Joe - Topic',
+      durationSec: 238,
+    });
+    const res = await resolve(g, '4');
+    expect(res.body).toMatchObject({ status: 'matched', track: { videoId: 'multotopic1' } });
+    expect(h.catalogCalls).toEqual([]);
+    expect(h.searchCalls).toEqual([]);
+  });
+});
+
+describe('GET /api/search/charts', () => {
+  const charts = (g: Guest) => g.api<ChartsResponse & { error?: string }>('GET', '/search/charts');
+
+  beforeEach(() => {
+    h.appleCharts.set('ph', [
+      { id: 'a1', name: 'Multo', artistName: 'Cup of Joe & Janine Teñoso' },
+      { id: 'a2', name: 'Not On Deezer', artistName: 'Nobody' },
+      { id: 'a3', name: 'Blinding Lights (feat. Nobody)', artistName: 'The Weeknd' },
+    ]);
+    h.catalogSongs.set('4', { title: 'Multo', artist: 'Cup of Joe', durationSec: 237 });
+    h.catalogSongs.set('6', { title: 'Multo', artist: 'Someone Else', durationSec: 200 });
+    h.catalogSearch.set('cup of joe multo', ['6', '4']);
+    h.catalogSearch.set('the weeknd blinding lights', ['908604612']);
+  });
+
+  it("maps the country's Apple Music chart to catalog songs and caches it", async () => {
+    const g = await h.guest();
+    expect((await fetch(`${h.baseUrl}/api/search/charts`)).status).toBe(401);
+    const res = await charts(g);
+    expect(res.status).toBe(200);
+    expect(res.body.country).toBe('PH');
+    expect(res.body.suggestions.map((s) => s.id)).toEqual(['4', '908604612']);
+    await charts(g);
+    expect(h.appleChartCalls).toEqual(['ph']);
+    expect(h.youtubeCalls).toHaveLength(0);
+  });
+
+  it('boosts charted songs in suggestions', async () => {
+    const g = await h.guest();
+    h.catalogSongs.set('7', {
+      title: 'Multo Ka',
+      artist: 'Big Star',
+      durationSec: 200,
+      rank: 900000,
+    });
+    h.catalogSongs.set('4', {
+      title: 'Multo',
+      artist: 'Cup of Joe',
+      durationSec: 237,
+      rank: 400000,
+    });
+    h.catalogSearch.set('multo', ['7', '4']);
+    await charts(g);
+    expect((await suggest(g, 'multo')).body.suggestions.map((s) => s.id)).toEqual(['4', '7']);
+  });
+
+  it("falls back to Deezer's worldwide chart", async () => {
+    const g = await h.guest();
+    h.deezerChart.push('908604612');
+    await h.settings.set('search.region', 'ZZ', null);
+    const res = await charts(g);
+    expect(res.body).toMatchObject({ country: null, suggestions: [{ id: '908604612' }] });
+    await h.settings.set('search.region', '', null);
+    expect((await charts(g)).body.country).toBeNull();
+    expect(h.appleChartCalls).toEqual(['zz']);
+  });
+
+  it('follows the feature switch', async () => {
+    const g = await h.guest();
+    await h.settings.set('features.catalogSearch', false, null);
+    expect((await charts(g)).status).toBe(403);
+  });
+});
+
+describe('YouTube search region', () => {
+  it('asks YouTube for results from the configured country', async () => {
+    const g = await h.guest();
+    await g.api('GET', '/search?q=blinding+lights');
+    await h.settings.set('search.region', '', null);
+    await g.api('GET', '/search?q=save+your+tears');
+    expect(h.searchRegions).toEqual(['PH', '']);
   });
 });

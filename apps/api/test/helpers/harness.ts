@@ -100,6 +100,15 @@ export interface FakeSong {
   durationSec: number;
   readable?: boolean;
   isrc?: string;
+  /** Deezer popularity. */
+  rank?: number;
+}
+
+/** An entry of the fake Apple Music chart. */
+export interface FakeChartEntry {
+  id: string;
+  name: string;
+  artistName: string;
 }
 
 /** A GIF or sticker in the fake KLIPY. `host` overrides the media host (default static.klipy.com). */
@@ -159,6 +168,8 @@ export async function createHarness(options: HarnessOptions = {}) {
   /** Canned `search.list` answers: query -> video ids. `searchCalls` records the queries asked. */
   const searchResults = new Map<string, string[]>();
   const searchCalls: string[] = [];
+  /** The `regionCode` each search asked for ('' for none). */
+  const searchRegions: string[] = [];
   /** Canned `playlistItems.list` data: playlist id -> video ids; an absent id answers 404. */
   const playlistPages = new Map<string, string[]>();
   /** Fake Deezer: songs by id, `/search/track` answers (query -> ids), and the paths asked for. */
@@ -171,6 +182,10 @@ export async function createHarness(options: HarnessOptions = {}) {
   /** Fake MusicBrainz: ISRC -> the URLs related to its recording; unknown ISRCs answer 404. */
   const musicBrainz = new Map<string, string[]>();
   const musicBrainzCalls: string[] = [];
+  /** Fake Apple Music charts by country (lowercase); others answer 404. And Deezer's own chart. */
+  const appleCharts = new Map<string, FakeChartEntry[]>();
+  const appleChartCalls: string[] = [];
+  const deezerChart: string[] = [];
   /** Set to make Deezer answer with this error code (status 200, like the real one). */
   const deezer: { errorCode: number | null } = { errorCode: null };
   const deezerTrack = (id: string, song: FakeSong) => ({
@@ -179,6 +194,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     isrc: song.isrc,
     title: song.title,
     duration: song.durationSec,
+    rank: song.rank,
     artist: { name: song.artist },
     album: {
       title: song.album ?? `${song.title} (Single)`,
@@ -224,6 +240,13 @@ export async function createHarness(options: HarnessOptions = {}) {
   const fakeFetch = (async (input: URL | string) => {
     const url = new URL(input);
     if (url.hostname === 'api.klipy.com') return klipyAnswer(url);
+    if (url.hostname === 'rss.marketingtools.apple.com') {
+      const country = url.pathname.split('/')[3] ?? '';
+      appleChartCalls.push(country);
+      const entries = appleCharts.get(country);
+      if (!entries) return new Response('Not Found', { status: 404 });
+      return Response.json({ feed: { country, results: entries } });
+    }
     if (url.hostname === 'musicbrainz.org') {
       const isrc = url.pathname.split('/').pop() ?? '';
       musicBrainzCalls.push(isrc);
@@ -255,6 +278,14 @@ export async function createHarness(options: HarnessOptions = {}) {
       if (deezer.errorCode !== null) {
         return Response.json({ error: { code: deezer.errorCode, message: 'Deezer error' } });
       }
+      if (url.pathname === '/chart/0/tracks') {
+        return Response.json({
+          data: deezerChart.flatMap((id) => {
+            const song = catalogSongs.get(id);
+            return song ? [deezerTrack(id, song)] : [];
+          }),
+        });
+      }
       if (url.pathname === '/search/track') {
         const ids = catalogSearch.get(url.searchParams.get('q') ?? '') ?? [];
         return Response.json({
@@ -281,6 +312,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     if (url.pathname.endsWith('/search')) {
       const q = url.searchParams.get('q') ?? '';
       searchCalls.push(q);
+      searchRegions.push(url.searchParams.get('regionCode') ?? '');
       const items = (searchResults.get(q) ?? []).map((videoId) => ({ id: { videoId } }));
       return new Response(JSON.stringify({ items }), { status: 200 });
     }
@@ -315,6 +347,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     chargeLookup: createLookupCharger(redis, () =>
       settings.get('limits.videoLookupsPerUserPerDay'),
     ),
+    region: () => settings.get('search.region'),
     fetch: fakeFetch,
   });
   const search = createSearchService({
@@ -514,6 +547,10 @@ export async function createHarness(options: HarnessOptions = {}) {
     catalogSearch,
     catalogCalls,
     deezer,
+    appleCharts,
+    appleChartCalls,
+    deezerChart,
+    searchRegions,
     songLinks,
     songLinkCalls,
     musicBrainz,

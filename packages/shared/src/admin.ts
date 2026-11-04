@@ -47,6 +47,8 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'search.cacheTtlSec': 'How long search results are cached, in seconds.',
   'search.dailySearchCallBudget':
     'YouTube search calls allowed per day. Each costs 100 quota units of the 10,000 default.',
+  'search.region':
+    'Country for the "Top songs" chart and for YouTube search results, as a two-letter code like PH. Empty: worldwide.',
   'catalog.cacheTtlSec': 'How long song suggestions are cached, in seconds.',
   'gifs.cacheTtlSec': 'How long GIF and sticker search results are cached, in seconds.',
   'gifs.contentFilter':

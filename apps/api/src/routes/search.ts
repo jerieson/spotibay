@@ -1,6 +1,7 @@
 import { Router, type Response } from 'express';
 import {
   resolveBodySchema,
+  type ChartsResponse,
   searchQuerySchema,
   type ResolveBody,
   type SearchErrorCode,
@@ -68,6 +69,16 @@ export function createSearchRouter({ search }: { search: SearchService }) {
       }
     },
   );
+
+  router.get('/search/charts', requireUser, async (_req, res) => {
+    try {
+      const { country, songs } = await search.charts();
+      const body: ChartsResponse = { country, suggestions: songs };
+      res.json(body);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
 
   router.post('/search/resolve', requireUser, validateBody(resolveBodySchema), async (req, res) => {
     const { catalogId } = req.body as ResolveBody;
