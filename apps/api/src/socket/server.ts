@@ -569,6 +569,17 @@ export function createSocketServer(deps: SocketServerDeps) {
       });
     });
 
+    socket.on('chat:deletePhoto', (raw: unknown) => {
+      enqueue(socket, async () => {
+        const payload = parse(socket, 'chat:deletePhoto', raw);
+        if (!payload) return;
+        const current = await currentRoom(socket);
+        if (!current) return fail(socket, 'not_in_room', 'Join a room first');
+        if (current.role !== 'host') return fail(socket, 'forbidden', 'Only the host can do that');
+        await chat.deletePhoto(current.row.id, socket.data.user.id, payload.messageId);
+      });
+    });
+
     socket.on('chat:reactMessage', (raw: unknown) => {
       enqueue(socket, async () => {
         const payload = parse(socket, 'chat:reactMessage', raw);

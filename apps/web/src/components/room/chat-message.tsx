@@ -1,4 +1,4 @@
-import { Reply, SmilePlus } from 'lucide-react';
+import { ImageOff, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import {
   REACTION_EMOJIS,
@@ -11,6 +11,7 @@ import {
 import { EmojiButton, ReactionEmoji } from '@/components/reaction-emoji';
 import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { splitMentions } from '@/lib/mentions';
 import { socket } from '@/lib/socket';
@@ -22,7 +23,12 @@ const formatTime = (iso: string) => timeFormat.format(new Date(iso));
 
 export type UserMessage = Extract<ChatMessage, { kind: 'user' }>;
 
-const mediaLabel = (kind: ChatMedia['kind']) => (kind === 'gif' ? 'GIF' : 'Sticker');
+const mediaLabels: Record<ChatMedia['kind'], string> = {
+  gif: 'GIF',
+  sticker: 'Sticker',
+  photo: 'Photo',
+};
+const mediaLabel = (kind: ChatMedia['kind']) => mediaLabels[kind];
 
 /** What a reply shows of a message: its text, or what kind of media it was. */
 export function quoteText(reply: Pick<ChatReply, 'excerpt' | 'media'>): string {
@@ -44,12 +50,14 @@ export function ChatMessageRow({
   onMention: (name: string) => void;
   onJump: (id: string) => void;
 }) {
+  const role = useRoomStore((s) => s.you?.role);
   if (message.kind === 'system') {
     return <p className="px-1 text-center text-sm text-muted-foreground">{message.body}</p>;
   }
   const { author } = message;
   const own = author.userId === selfId;
   const mentionsMe = !own && message.mentions.some((m) => m.userId === selfId);
+  const isHost = role === 'host';
   return (
     <div
       id={`msg-${message.id}`}
@@ -96,13 +104,30 @@ export function ChatMessageRow({
             )}
           </p>
         )}
-        {message.media && <Media media={message.media} />}
+        {message.media &&
+          (message.media.kind === 'photo' ? (
+            <ChatPhoto media={message.media} author={author.displayName} />
+          ) : (
+            <Media media={message.media} />
+          ))}
         {message.reactions.length > 0 && (
           <ReactionChips messageId={message.id} reactions={message.reactions} selfId={selfId} />
         )}
       </div>
       <div className="absolute top-0 right-0 flex opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-60">
         <ReactPicker messageId={message.id} />
+        {message.media?.kind === 'photo' && isHost && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 text-destructive"
+            aria-label="Remove photo"
+            title="Remove photo for everyone"
+            onClick={() => socket.emit('chat:deletePhoto', { messageId: message.id })}
+          >
+            <Trash2 />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -223,5 +248,46 @@ function Media({ media }: { media: ChatMedia }) {
         media.kind === 'gif' ? 'max-h-48 rounded-lg bg-muted' : 'max-h-32',
       )}
     />
+  );
+}
+
+/** A photo in chat: tap for the full size. Once it's expired or removed, a note in its place. */
+function ChatPhoto({ media, author }: { media: ChatMedia; author: string }) {
+  const [gone, setGone] = useState(false);
+  if (gone) {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground italic">
+        <ImageOff className="size-3.5" /> Photo expired
+      </p>
+    );
+  }
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="mt-1 block max-w-full overflow-hidden rounded-lg bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          aria-label={`Photo from ${author}. Open full size`}
+        >
+          <img
+            src={media.url}
+            alt=""
+            width={media.width}
+            height={media.height}
+            loading="lazy"
+            onError={() => setGone(true)}
+            className="h-auto max-h-64 w-auto max-w-full object-contain"
+          />
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-[min(96vw,64rem)] border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">Photo from {author}</DialogTitle>
+        <img
+          src={media.url}
+          alt={`Photo from ${author}`}
+          className="max-h-[85dvh] w-full rounded-xl object-contain"
+        />
+      </DialogContent>
+    </Dialog>
   );
 }

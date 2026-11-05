@@ -78,7 +78,9 @@ export function createSessionRouter({ identity, wordFilter, secureCookie }: Sess
     }
     const patch: { displayName?: string; avatar?: Avatar } = {};
     if (displayName !== undefined) patch.displayName = displayName;
-    if (avatar !== undefined) patch.avatar = avatar;
+    // A photo is only set or cleared through /me/avatar-photo; editing the generated avatar keeps it.
+    const { photoId } = req.user!.avatar;
+    if (avatar !== undefined) patch.avatar = photoId ? { ...avatar, photoId } : avatar;
     const user = await identity.updateProfile(req.user!.id, patch);
     if (!user) {
       res.status(404).json({ error: 'not_found' });

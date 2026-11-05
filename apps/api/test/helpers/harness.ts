@@ -49,6 +49,7 @@ import { createLibraryService } from '../../src/services/library.js';
 import { createPlaylistService } from '../../src/services/playlists.js';
 import { createSearchService } from '../../src/services/search.js';
 import { createVibeService } from '../../src/services/vibes.js';
+import { createAvatarPhotoService, createPhotoService } from '../../src/services/photos.js';
 import { createRecommendationService } from '../../src/services/recommendations.js';
 import { createMusicBrainzLinks, createOdesliLinks } from '../../src/services/song-links.js';
 import { createLastfmSimilar } from '../../src/services/similar.js';
@@ -448,11 +449,21 @@ export async function createHarness(options: HarnessOptions = {}) {
     metrics,
   });
   const gifs = createGifService({ redis, settings, apiKey: KLIPY_TEST_KEY, fetch: fakeFetch });
+  /** The photo clock, so tests can age photos past their day. */
+  const photoClock = { offsetMs: 0 };
+  const photos = createPhotoService({
+    db,
+    redis,
+    settings,
+    now: () => new Date(Date.now() + photoClock.offsetMs),
+  });
+  const avatars = createAvatarPhotoService({ db, redis });
   const chat = createChatService({
     store: createChatStore(db),
     redis,
     settings,
     gifs,
+    photos,
     members: (roomId) => presence.list(roomId),
   });
   const playlists = createPlaylistService({ db, youtube, settings });
@@ -477,6 +488,8 @@ export async function createHarness(options: HarnessOptions = {}) {
     presence,
     playback,
     chat,
+    photos,
+    avatars,
     settings,
     metrics,
   });
@@ -490,6 +503,8 @@ export async function createHarness(options: HarnessOptions = {}) {
     search,
     recommendations,
     vibes,
+    photos,
+    avatars,
     gifs,
     playlists,
     library,
@@ -522,6 +537,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     }),
   });
   await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  const stopPhotoCleanup = photos.startCleanup(rooms);
   const baseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
 
   const sockets = new Set<ClientSocket>();
@@ -595,6 +611,7 @@ export async function createHarness(options: HarnessOptions = {}) {
   async function close() {
     lifecycle.stop();
     autoplay.stop();
+    stopPhotoCleanup();
     playback.stop();
     for (const s of sockets) s.disconnect();
     // Disconnects trigger presence cleanup on the server; let it finish before the stores go away.
@@ -633,6 +650,8 @@ export async function createHarness(options: HarnessOptions = {}) {
     artistRadios,
     recommendations,
     autoplay,
+    photos,
+    photoClock,
     searchRegions,
     songLinks,
     songLinkCalls,

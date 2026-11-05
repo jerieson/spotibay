@@ -1,4 +1,4 @@
-import { ArrowDown, Send, X } from 'lucide-react';
+import { ArrowDown, ImagePlus, Send, X } from 'lucide-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -13,6 +13,7 @@ import { GifPicker } from '@/components/room/gif-picker';
 import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { usePhotoUpload } from '@/hooks/use-photo-upload';
 import { useSite } from '@/hooks/use-site';
 import { activeMentionIds, findMentionQuery, insertMention } from '@/lib/mentions';
 import { socket } from '@/lib/socket';
@@ -27,7 +28,13 @@ export function ChatPanel() {
   const messages = useRoomStore((s) => s.chat);
   const members = useRoomStore((s) => s.members);
   const selfId = useRoomStore((s) => s.you?.userId);
-  const gifsEnabled = useSite().data?.gifs ?? false;
+  const site = useSite().data;
+  const gifsEnabled = site?.gifs ?? false;
+  const photosEnabled = site?.photos ?? false;
+  const roomCode = useRoomStore((s) => s.room?.code);
+  const { upload, pick, clear } = usePhotoUpload(roomCode);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const stickRef = useRef(true);
@@ -130,9 +137,13 @@ export function ChatPanel() {
     setTimeout(() => setHighlighted((h) => (h === id ? null : h)), HIGHLIGHT_MS);
   }
 
-  function send(media?: ChatMedia) {
+  function send(pickedMedia?: Pick<ChatMedia, 'kind' | 'id'>) {
     const body = draft.trim();
+    const media =
+      pickedMedia ??
+      (upload?.status === 'ready' ? { kind: 'photo' as const, id: upload.id } : undefined);
     if (!body && !media) return;
+    if (upload && upload.status !== 'ready' && !pickedMedia) return;
     const mentionIds = activeMentionIds(body, picked);
     socket.emit('chat:send', {
       body,
@@ -141,6 +152,7 @@ export function ChatPanel() {
       media: media ? { kind: media.kind, id: media.id } : undefined,
     });
     setDraft('');
+    if (media?.kind === 'photo') clear();
     setPicked(new Map());
     setReplyTo(null);
     setMention(null);
@@ -173,7 +185,27 @@ export function ChatPanel() {
   }
 
   return (
-    <div className="flex h-[min(34rem,62dvh)] flex-col gap-2 lg:h-[min(44rem,calc(100dvh-12rem))]">
+    <div
+      className={cn(
+        'flex h-[min(34rem,62dvh)] flex-col gap-2 rounded-lg lg:h-full',
+        dragging && 'ring-2 ring-[var(--room-accent)] ring-offset-4 ring-offset-background',
+      )}
+      onDragOver={(e) => {
+        if (!photosEnabled || !e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={(e) => {
+        setDragging(false);
+        const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
+        if (!photosEnabled || !file) return;
+        e.preventDefault();
+        void pick(file);
+      }}
+    >
       <div className="relative min-h-0 flex-1">
         <div
           ref={listRef}
@@ -232,6 +264,37 @@ export function ChatPanel() {
           </Button>
         </div>
       )}
+      {upload && (
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/60 p-1.5 pr-1 text-xs">
+          <img
+            src={upload.previewUrl}
+            alt=""
+            className="size-10 shrink-0 rounded-md object-cover"
+          />
+          <p
+            className={cn(
+              'min-w-0 flex-1 truncate',
+              upload.status === 'failed' ? 'text-destructive' : 'text-muted-foreground',
+            )}
+            role="status"
+          >
+            {upload.status === 'uploading'
+              ? `Uploading… ${Math.round(upload.progress * 100)}%`
+              : upload.status === 'ready'
+                ? 'Photo ready. Add a message or press Send.'
+                : upload.message}
+          </p>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-6"
+            aria-label="Remove photo"
+            onClick={clear}
+          >
+            <X />
+          </Button>
+        </div>
+      )}
       <form onSubmit={submit} className="relative flex gap-1.5">
         {suggestions.length > 0 && (
           <ul
@@ -270,6 +333,13 @@ export function ChatPanel() {
             setMention(findMentionQuery(el.value, el.selectionStart ?? el.value.length));
           }}
           onBlur={() => setMention(null)}
+          onPaste={(e) => {
+            const file = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'));
+            if (photosEnabled && file) {
+              e.preventDefault();
+              void pick(file);
+            }
+          }}
           placeholder={replyTo ? 'Write a reply' : 'Send a message, @ to mention'}
           aria-label="Message"
           autoComplete="off"
@@ -280,8 +350,38 @@ export function ChatPanel() {
             suggestions[active] ? `mention-${suggestions[active].userId}` : undefined
           }
         />
+        {photosEnabled && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void pick(file);
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Add a photo"
+              title="Add a photo (or paste one)"
+              onClick={() => fileRef.current?.click()}
+            >
+              <ImagePlus />
+            </Button>
+          </>
+        )}
         {gifsEnabled && <GifPicker onPick={(media) => send(media)} />}
-        <Button type="submit" size="icon" aria-label="Send" disabled={draft.trim() === ''}>
+        <Button
+          type="submit"
+          size="icon"
+          aria-label="Send"
+          disabled={upload ? upload.status !== 'ready' : draft.trim() === ''}
+        >
           <Send />
         </Button>
       </form>

@@ -104,6 +104,28 @@ export async function updateMe(body: UpdateMeBody): Promise<User> {
   return res.user;
 }
 
+/** Sets the picture as your avatar photo (made smaller first); resolves with your updated profile. */
+export async function setAvatarPhoto(picture: Blob): Promise<User> {
+  let res: Response;
+  try {
+    res = await fetch('/api/me/avatar-photo', {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': picture.type || 'image/jpeg' },
+      body: picture,
+    });
+  } catch {
+    throw networkError();
+  }
+  if (!res.ok) await throwForResponse(res);
+  return meResponseSchema.parse(await res.json()).user;
+}
+
+/** Goes back to your generated avatar. */
+export async function removeAvatarPhoto(): Promise<User> {
+  return (await request(meResponseSchema, '/api/me/avatar-photo', { method: 'DELETE' })).user;
+}
+
 export async function createRoom(body: CreateRoomBody): Promise<RoomSummary> {
   const res = await request(roomResponseSchema, '/api/rooms', { method: 'POST', body });
   return res.room;

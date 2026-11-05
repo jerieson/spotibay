@@ -112,7 +112,12 @@ function RoomDetail({ code, onGone }: { code: string; onGone: () => void }) {
         <ul className="space-y-1.5">
           {r.members.map((m) => (
             <li key={m.userId} className="flex items-center gap-2 text-sm">
-              <UserAvatar avatar={m.avatar} name={m.displayName} className="size-7" />
+              <UserAvatar
+                avatar={m.avatar}
+                name={m.displayName}
+                className="size-7"
+                photoBase="/api/admin/avatars"
+              />
               <span className="min-w-0 flex-1 truncate">{m.displayName}</span>
               <Badge variant="outline">{m.role}</Badge>
               <Button

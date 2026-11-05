@@ -121,7 +121,11 @@ export function useRoomConnection(code: string, asAdmin = false) {
       if (key === 'limits.maxQueueItemsPerUser' && typeof value === 'number') {
         useRoomStore.getState().setQueueLimit(value);
       }
-      if (key === 'site.maintenanceMode' || key === 'features.gifs') {
+      if (
+        key === 'site.maintenanceMode' ||
+        key === 'features.gifs' ||
+        key === 'features.chatPhotos'
+      ) {
         void queryClient.invalidateQueries({ queryKey: siteKey });
       }
     };
@@ -130,6 +134,7 @@ export function useRoomConnection(code: string, asAdmin = false) {
         maintenance: site?.maintenance ?? false,
         announcement,
         gifs: site?.gifs ?? false,
+        photos: site?.photos ?? false,
       }));
     const onError: ServerToClientEvents['error'] = (err) => toast.error(err.message);
 

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ImageOff } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { MAX_BAN_MINUTES, type AdminBan, type CreateBanBody } from '@spotibay/shared';
@@ -62,7 +63,11 @@ export function UsersPage() {
                   aria-pressed={selected === u.id}
                   className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left hover:border-ring/60 aria-pressed:border-ring"
                 >
-                  <UserAvatar avatar={u.avatar} name={u.displayName} />
+                  <UserAvatar
+                    avatar={u.avatar}
+                    name={u.displayName}
+                    photoBase="/api/admin/avatars"
+                  />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{u.displayName}</span>
                     <span className="text-sm text-muted-foreground">
@@ -151,6 +156,7 @@ function BanFields({
 }
 
 function UserDetail({ id }: { id: string }) {
+  const qc = useQueryClient();
   const user = useQuery({ queryKey: ['admin', 'user', id], queryFn: () => adminApi.user(id) });
   const { ban, unban } = useBanMutations();
   const kick = useMutation({
@@ -161,6 +167,15 @@ function UserDetail({ id }: { id: string }) {
   const [reason, setReason] = useState('');
   const [minutes, setMinutes] = useState<number | null>(60 * 24);
 
+  const removePhoto = useMutation({
+    mutationFn: () => adminApi.removeAvatarPhoto(id),
+    onSuccess: async () => {
+      toast.success('Photo removed');
+      await qc.invalidateQueries({ queryKey: ['admin'] });
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
   if (!user.data) return <QueryState isPending={user.isPending} error={user.error} />;
   const u = user.data;
   const active = u.bans.find((b) => b.active);
@@ -168,11 +183,21 @@ function UserDetail({ id }: { id: string }) {
   return (
     <Card className="space-y-3">
       <div className="flex items-center gap-3">
-        <UserAvatar avatar={u.avatar} name={u.displayName} />
-        <div className="min-w-0">
+        <UserAvatar avatar={u.avatar} name={u.displayName} photoBase="/api/admin/avatars" />
+        <div className="min-w-0 flex-1">
           <h2 className="truncate font-semibold">{u.displayName}</h2>
           <p className="truncate font-mono text-sm text-muted-foreground">{u.id}</p>
         </div>
+        {u.avatar.photoId && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={removePhoto.isPending}
+            onClick={() => removePhoto.mutate()}
+          >
+            <ImageOff /> Remove photo
+          </Button>
+        )}
       </div>
       <p className="text-sm text-muted-foreground">
         Joined {formatTime(u.createdAt)} · IPs now: {u.ips.length ? u.ips.join(', ') : 'offline'}

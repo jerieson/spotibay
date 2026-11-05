@@ -105,6 +105,8 @@ export const clientEventSchemas = {
   'chat:react': z.object({ emoji: reactionEmojiSchema }),
   /** Adds the emoji to a message, or takes it back if the sender already added it. */
   'chat:reactMessage': z.object({ messageId: z.uuid(), emoji: reactionEmojiSchema }),
+  /** The host takes down a photo message in their room. */
+  'chat:deletePhoto': z.object({ messageId: z.uuid() }),
 } as const;
 
 export type ClientEventPayloads = {
@@ -137,6 +139,7 @@ export interface ClientToServerEvents {
   'chat:send': (payload: ClientEventPayloads['chat:send']) => void;
   'chat:react': (payload: ClientEventPayloads['chat:react']) => void;
   'chat:reactMessage': (payload: ClientEventPayloads['chat:reactMessage']) => void;
+  'chat:deletePhoto': (payload: ClientEventPayloads['chat:deletePhoto']) => void;
 }
 
 export interface ServerToClientEvents {

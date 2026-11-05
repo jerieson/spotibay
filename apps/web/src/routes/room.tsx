@@ -1,5 +1,5 @@
 import { Lock } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { roomCodeSchema } from '@spotibay/shared';
 import { CopyButton } from '@/components/copy-button';
@@ -14,7 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueueSongOnJoin } from '@/hooks/use-queue-song-on-join';
 import { useRoomConnection } from '@/hooks/use-room';
 import { useSession } from '@/hooks/use-session';
-import { useRoomStore } from '@/stores/room';
+import { useArtworkColor } from '@/hooks/use-artwork-color';
+import { useRoomStore, type RoomTab } from '@/stores/room';
 
 export function RoomPage() {
   const params = useParams();
@@ -28,10 +29,12 @@ function Room({ code }: { code: string }) {
   const session = useSession();
   const [searchParams] = useSearchParams();
   const { submitPassword } = useRoomConnection(code, searchParams.get('admin') === '1');
-  const { status, error, room, members, you, unreadMentions, setChatOpen } = useRoomStore();
+  const { status, error, room, members, you, unreadMentions, tab, setTab } = useRoomStore();
   const idle = useRoomStore((s) => !s.playback.item && s.queue.length === 0);
-  const [adding, setAdding] = useState(false);
-  const [tab, setTab] = useState('chat');
+  const adding = useRoomStore((s) => s.addingMusic);
+  const setAdding = useRoomStore((s) => s.setAddingMusic);
+  const artwork = useRoomStore((s) => s.playback.item?.track.thumbnailUrl);
+  const accent = useArtworkColor(artwork);
   useQueueSongOnJoin(status === 'joined');
 
   if (status === 'closed') return <Notice title="This room has been closed" />;
@@ -50,7 +53,15 @@ function Room({ code }: { code: string }) {
   const inviteLink = `${window.location.origin}/r/${room.code}`;
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6"
+      style={
+        {
+          '--room-accent': accent?.color ?? 'var(--volt)',
+          '--room-accent-ink': accent?.ink ?? '#000000',
+        } as CSSProperties
+      }
+    >
       <header className="flex flex-wrap items-center gap-3">
         <div className="w-full min-w-0 sm:w-auto sm:flex-1">
           <h1 className="line-clamp-2 font-display text-2xl font-extrabold tracking-tight break-words sm:line-clamp-1 sm:text-3xl">
@@ -84,41 +95,41 @@ function Room({ code }: { code: string }) {
         <div className="min-w-0 space-y-4">
           <PlayerPanel />
         </div>
-        <Tabs
-          value={tab}
-          onValueChange={(next) => {
-            setTab(next);
-            setChatOpen(next === 'chat');
-          }}
-          className="min-w-0"
-        >
-          <TabsList className="w-full">
-            <TabsTrigger value="chat" className="gap-1.5">
-              Chat
-              {unreadMentions > 0 && (
-                <span
-                  className="min-w-5 rounded-full bg-volt px-1.5 text-xs leading-5 font-bold text-black"
-                  aria-label={`${unreadMentions} unread ${unreadMentions === 1 ? 'mention' : 'mentions'}`}
-                >
-                  @{unreadMentions}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="queue">Queue</TabsTrigger>
-            <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
-          </TabsList>
-          <TabsContent value="chat">
-            <ChatPanel />
-          </TabsContent>
-          <TabsContent value="queue">
-            <section aria-label="Queue">
-              <QueuePanel code={room.code} />
-            </section>
-          </TabsContent>
-          <TabsContent value="members">
-            <MemberList members={members} selfId={you.userId} viewerRole={you.role} />
-          </TabsContent>
-        </Tabs>
+        {/* On wide screens the player alone sets the row's height; this column fills it. */}
+        <div className="min-w-0 lg:relative lg:min-h-[32rem]">
+          <Tabs
+            value={tab}
+            onValueChange={(next) => setTab(next as RoomTab)}
+            className="min-w-0 lg:absolute lg:inset-0 lg:flex lg:flex-col"
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="chat" className="gap-1.5">
+                Chat
+                {unreadMentions > 0 && (
+                  <span
+                    className="min-w-5 rounded-full bg-volt px-1.5 text-xs leading-5 font-bold text-black"
+                    aria-label={`${unreadMentions} unread ${unreadMentions === 1 ? 'mention' : 'mentions'}`}
+                  >
+                    @{unreadMentions}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="queue">Queue</TabsTrigger>
+              <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
+            </TabsList>
+            <TabsContent value="chat" className="lg:min-h-0 lg:flex-1">
+              <ChatPanel />
+            </TabsContent>
+            <TabsContent value="queue" className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+              <section aria-label="Queue">
+                <QueuePanel code={room.code} />
+              </section>
+            </TabsContent>
+            <TabsContent value="members" className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+              <MemberList members={members} selfId={you.userId} viewerRole={you.role} />
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   );

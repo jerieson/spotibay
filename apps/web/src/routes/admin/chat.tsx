@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2 } from 'lucide-react';
+import { ImageOff, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -28,12 +28,38 @@ export function ChatPage() {
     onError: (e) => toast.error(friendlyError(e)),
   });
 
+  const purge = useMutation({
+    mutationFn: () => adminApi.purgePhotos(filter.roomCode || undefined),
+    onSuccess: async (res) => {
+      toast.success(
+        `Removed ${res.messages} photo ${res.messages === 1 ? 'message' : 'messages'} and ${res.photos} ${res.photos === 1 ? 'photo' : 'photos'}`,
+      );
+      await qc.invalidateQueries({ queryKey: ['admin', 'chat'] });
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
   return (
     <>
-      <PageHeader title="Chat" />
+      <PageHeader title="Chat">
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={purge.isPending}
+          onClick={() => {
+            const where = filter.roomCode ? `room ${filter.roomCode}` : 'every room';
+            if (window.confirm(`Remove every photo in ${where}? This can't be undone.`)) {
+              purge.mutate();
+            }
+          }}
+        >
+          <ImageOff /> Purge photos{filter.roomCode ? ` in ${filter.roomCode}` : ''}
+        </Button>
+      </PageHeader>
       <p className="mb-3 text-sm text-muted-foreground">
-        Deleted messages disappear for everyone in the room. Edit the word filter under Settings →
-        Moderation.
+        Deleted messages disappear for everyone in the room. Photos are also deleted when their room
+        closes or after 24 hours. Filter by room code to purge one room&apos;s photos. Edit the word
+        filter under Settings → Moderation.
       </p>
       <form
         className="mb-4 flex flex-wrap gap-2"
@@ -77,14 +103,19 @@ export function ChatPage() {
               {m.media && (
                 <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
                   <img
-                    src={m.media.previewUrl}
+                    src={
+                      m.media.kind === 'photo'
+                        ? `/api/admin/photos/${m.media.id}`
+                        : m.media.previewUrl
+                    }
                     alt={m.media.title}
                     loading="lazy"
                     className={cn('h-16 w-auto rounded-md', m.deleted && 'opacity-40 grayscale')}
                   />
                   <span>
-                    {m.media.kind === 'gif' ? 'GIF' : 'Sticker'}
-                    {m.media.title && `: ${m.media.title}`}
+                    {m.media.kind === 'photo'
+                      ? 'Photo'
+                      : `${m.media.kind === 'gif' ? 'GIF' : 'Sticker'}${m.media.title ? `: ${m.media.title}` : ''}`}
                   </span>
                 </div>
               )}

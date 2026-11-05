@@ -3,6 +3,7 @@ import {
   adminBanResponseSchema,
   adminChatListResponseSchema,
   adminDashboardSchema,
+  adminPurgePhotosResponseSchema,
   adminMeResponseSchema,
   adminQuotaResponseSchema,
   adminRoomListResponseSchema,
@@ -55,6 +56,12 @@ export const adminApi = {
   chat: async (filter: { roomCode?: string; q?: string; userId?: string }) =>
     (await get(adminChatListResponseSchema, `/chat${qs(filter)}`)).messages,
   deleteMessage: (id: string) => call(`/chat/${id}`, 'DELETE'),
+  removeAvatarPhoto: (userId: string) => call(`/users/${userId}/avatar-photo`, 'DELETE'),
+  /** Every chat photo in a room (by code), or everywhere; the photo messages go too. */
+  purgePhotos: async (roomCode?: string) =>
+    adminPurgePhotosResponseSchema.parse(
+      await call('/photos/purge', 'POST', roomCode ? { roomCode } : {}),
+    ),
   quota: () => get(adminQuotaResponseSchema, '/quota'),
   audit: (filter: { action?: string; targetType?: string; before?: number }) =>
     get(auditListResponseSchema, `/audit${qs({ ...filter, limit: 50 })}`),

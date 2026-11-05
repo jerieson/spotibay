@@ -22,6 +22,7 @@ import type { AdminDataStore, AdminUserRow, ChatFilter } from './admin-store.js'
 import type { AuditFilter, AuditService } from './audit.js';
 import type { Metrics } from '../lib/metrics.js';
 import type { ChatService } from './chat.js';
+import type { AvatarPhotoService, PhotoService } from './photos.js';
 import type { PlaybackService } from './playback.js';
 import type { Presence } from './presence.js';
 import type { RoomRow, RoomService } from './rooms.js';
@@ -58,6 +59,10 @@ export interface AdminServiceDeps {
   presence: Presence;
   playback: Pick<PlaybackService, 'snapshot'>;
   chat: Pick<ChatService, 'announceDeleted'>;
+  /** Chat photos: deleted with their message, or purged. */
+  photos?: Pick<PhotoService, 'deleteForMessages' | 'photoMessages' | 'purge' | 'find'>;
+  /** People's photo avatars, which the admin can take down. */
+  avatars?: Pick<AvatarPhotoService, 'clear' | 'find'>;
   settings: Pick<SettingsService, 'all' | 'set' | 'version'>;
   /** Daily counters, for how suggested songs were matched. */
   metrics?: Pick<Metrics, 'get'>;
@@ -85,6 +90,8 @@ export function createAdminService({
   presence,
   playback,
   chat,
+  photos,
+  avatars,
   settings,
   metrics,
   timeZone = 'Asia/Manila',
@@ -252,8 +259,55 @@ export function createAdminService({
   async function deleteMessage(adminId: string, id: string): Promise<void> {
     const deleted = await store.deleteChatMessage(id, adminId);
     if (!deleted) throw new AdminError('not_found', 'Message not found');
+    await photos?.deleteForMessages([id]);
     chat.announceDeleted(deleted.roomId, id);
     await audit.record({ adminId, action: 'chat.delete', targetType: 'message', targetId: id });
+  }
+
+  /** Takes down someone's photo avatar; they go back to their generated one. */
+  async function removeAvatarPhoto(adminId: string, userId: string): Promise<void> {
+    if (!avatars || !(await avatars.clear(userId))) {
+      throw new AdminError('not_found', 'User not found');
+    }
+    await audit.record({
+      adminId,
+      action: 'user.removeAvatarPhoto',
+      targetType: 'user',
+      targetId: userId,
+    });
+  }
+
+  /**
+   * Takes down every photo in chat, in one room (by code) or everywhere: the photo messages
+   * disappear for everyone and the photos are deleted.
+   */
+  async function purgePhotos(
+    adminId: string,
+    roomCode?: string,
+  ): Promise<{ messages: number; photos: number }> {
+    if (!photos) return { messages: 0, photos: 0 };
+    let roomId: string | undefined;
+    if (roomCode) {
+      const room = await rooms.findByCode(roomCode);
+      if (!room) throw new AdminError('not_found', 'Room not found');
+      roomId = room.id;
+    }
+    let messages = 0;
+    for (const m of await photos.photoMessages(roomId)) {
+      if (await store.deleteChatMessage(m.messageId, adminId)) {
+        messages++;
+        chat.announceDeleted(m.roomId, m.messageId);
+      }
+    }
+    const count = await photos.purge(roomId);
+    await audit.record({
+      adminId,
+      action: 'chat.purgePhotos',
+      targetType: roomCode ? 'room' : 'site',
+      ...(roomCode ? { targetId: roomCode } : {}),
+      details: { messages, photos: count },
+    });
+    return { messages, photos: count };
   }
 
   async function quota(): Promise<AdminQuotaResponse> {
@@ -385,6 +439,12 @@ export function createAdminService({
     listBans: store.listBans,
     listChat,
     deleteMessage,
+    purgePhotos,
+    removeAvatarPhoto,
+    /** An avatar photo's bytes, so the admin can see what they might take down. */
+    avatarPhoto: async (id: string): Promise<Buffer | null> => (avatars ? avatars.find(id) : null),
+    /** A chat photo's bytes, for the moderation list. */
+    photo: async (id: string): Promise<Buffer | null> => (photos ? photos.find(id) : null),
     quota,
     updateSetting,
     getSettings: (): { settings: SettingsValues; version: number } => ({

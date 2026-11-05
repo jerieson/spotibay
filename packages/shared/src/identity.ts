@@ -127,6 +127,11 @@ export const displayNameSchema = z
 export const avatarSchema = z.object({
   style: z.enum(avatarStyles),
   seed: z.string().trim().min(1).max(64),
+  /**
+   * The person's own photo (`/api/avatars/:photoId`), shown instead of the generated avatar.
+   * Only the server sets it, through `PUT /api/me/avatar-photo`.
+   */
+  photoId: z.uuid().optional(),
   options: z
     .object({
       backgroundColor: z
@@ -163,7 +168,7 @@ export const recoveryCodeResponseSchema = z.object({ recoveryCode: z.string() })
 export const meResponseSchema = z.object({ user: userSchema });
 
 export const updateMeBodySchema = z
-  .object({ displayName: displayNameSchema, avatar: avatarSchema })
+  .object({ displayName: displayNameSchema, avatar: avatarSchema.omit({ photoId: true }) })
   .partial()
   .refine((v) => v.displayName !== undefined || v.avatar !== undefined, 'nothing to update');
 

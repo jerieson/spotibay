@@ -13,7 +13,10 @@ export function PlayerDock() {
   const item = playback.item;
   const playing = playback.status === 'playing';
 
-  if (!inRoom && !item) return null;
+  const playerVisible = useRoomStore((s) => s.playerVisible);
+
+  // On the room page the big player is right there; the dock is for when it's scrolled away.
+  if ((!inRoom && !item) || playerVisible) return null;
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">

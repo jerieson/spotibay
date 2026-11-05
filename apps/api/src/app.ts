@@ -8,6 +8,7 @@ import { attachUser, banGuard } from './middleware/session.js';
 import { attachAdmin, createAdminRouter } from './routes/admin.js';
 import { createGifsRouter } from './routes/gifs.js';
 import { createLibraryRouter } from './routes/library.js';
+import { createPhotosRouter } from './routes/photos.js';
 import { createRoomsRouter } from './routes/rooms.js';
 import { createSearchRouter } from './routes/search.js';
 import { createSessionRouter } from './routes/session.js';
@@ -21,6 +22,7 @@ import type { PlaybackService } from './services/playback.js';
 import type { PlaylistService } from './services/playlists.js';
 import type { Presence } from './services/presence.js';
 import type { RecommendationService } from './services/recommendations.js';
+import type { AvatarPhotoService, PhotoService } from './services/photos.js';
 import type { VibeService } from './services/vibes.js';
 import type { RoomService } from './services/rooms.js';
 import type { SearchService } from './services/search.js';
@@ -55,6 +57,10 @@ export interface AppDeps {
   recommendations?: Pick<RecommendationService, 'enabled' | 'forUser'>;
   /** With `search`, mounts `GET /api/vibes/:id`. */
   vibes?: Pick<VibeService, 'enabled' | 'forVibe'>;
+  /** Mounts photo upload and serving (requires `identity`, `rooms` and `presence`). */
+  photos?: PhotoService;
+  /** With `photos`, mounts avatar photo upload and serving. */
+  avatars?: AvatarPhotoService;
   /** GIF/sticker search is mounted when this is provided (requires `identity`); also feeds `/api/site`. */
   gifs?: GifService;
   /** Playlist, likes and listening-history routes are mounted when both are provided. */
@@ -87,6 +93,10 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     res.status(400).json({ error: 'invalid_request', message: 'Malformed JSON' });
     return;
   }
+  if (typeof err === 'object' && err !== null && 'type' in err && err.type === 'entity.too.large') {
+    res.status(413).json({ error: 'too_large', message: 'That file is too big' });
+    return;
+  }
   logger.error({ err }, 'unhandled request error');
   res.status(500).json({ error: 'internal_error' });
 };
@@ -102,6 +112,8 @@ export function createApp({
   search,
   recommendations,
   vibes,
+  photos,
+  avatars,
   gifs,
   playlists,
   library,
@@ -187,6 +199,7 @@ export function createApp({
         maintenance: settings.get('site.maintenanceMode'),
         announcement: settings.get('site.announcement'),
         gifs: gifs?.available() ?? false,
+        photos: settings.get('features.chatPhotos'),
       };
       res.json(body);
     });
@@ -216,6 +229,9 @@ export function createApp({
       createSessionRouter({ identity, wordFilter: wordFilter ?? (() => []), secureCookie }),
     );
     if (rooms) app.use('/api', createRoomsRouter({ rooms, presence, playback }));
+    if (photos && rooms && presence) {
+      app.use('/api', createPhotosRouter({ photos, avatars, rooms, presence }));
+    }
     if (search) app.use('/api', createSearchRouter({ search, recommendations, vibes }));
     if (gifs) app.use('/api', createGifsRouter({ gifs }));
     if (playlists && library) {

@@ -22,11 +22,11 @@ import {
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useQueueCatalogSong } from '@/hooks/use-queue-catalog-song';
 import {
   fetchCharts,
   fetchRecommendations,
   RECOMMENDATIONS_STALE_MS,
-  resolveTrack,
   searchTracks,
   suggestTracks,
 } from '@/lib/api';
@@ -128,16 +128,9 @@ export function AddMusicSheet({
     onSuccess: (res) => setYoutube({ kind: 'search', results: res.results }),
   });
 
-  const resolve = useMutation({
-    mutationFn: (song: CatalogTrack) => resolveTrack(song.id),
-    onSuccess: (res, song) => {
-      if (res.status === 'matched') {
-        socket.emit('queue:add', { url: res.track.videoId });
-        setAdded((prev) => new Set(prev).add(song.id).add(res.track.videoId));
-      } else {
-        setYoutube({ kind: 'fallback', song, results: res.results });
-      }
-    },
+  const resolve = useQueueCatalogSong({
+    onMatched: (song, track) => setAdded((prev) => new Set(prev).add(song.id).add(track.videoId)),
+    onNoMatch: (song, results) => setYoutube({ kind: 'fallback', song, results }),
   });
 
   function edit(value: string) {

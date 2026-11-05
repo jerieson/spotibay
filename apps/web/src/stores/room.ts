@@ -18,6 +18,7 @@ import {
 const CHAT_CAP = 200;
 
 export type RoomStatus = 'connecting' | 'needs-password' | 'joined' | 'closed' | 'failed';
+export type RoomTab = 'chat' | 'queue' | 'members';
 
 interface RoomStoreState {
   status: RoomStatus;
@@ -35,6 +36,12 @@ interface RoomStoreState {
   sync: SyncConfig;
   /** Songs a listener may have waiting at once; see `queueSlots`. */
   queueLimitPerUser: number;
+  /** The room page's side tab. */
+  tab: RoomTab;
+  /** The Add music sheet is open. */
+  addingMusic: boolean;
+  /** The big player is on screen, so the floating dock stays out of the way. */
+  playerVisible: boolean;
   reset: () => void;
   setStatus: (status: RoomStatus, error?: SocketError | null) => void;
   setState: (state: RoomState) => void;
@@ -49,6 +56,9 @@ interface RoomStoreState {
   setMessageReactions: (messageId: string, reactions: MessageReaction[]) => void;
   setChatOpen: (open: boolean) => void;
   addUnreadMention: () => void;
+  setTab: (tab: RoomTab) => void;
+  setAddingMusic: (open: boolean) => void;
+  setPlayerVisible: (visible: boolean) => void;
 }
 
 const initial = {
@@ -65,6 +75,9 @@ const initial = {
   unreadMentions: 0,
   sync: { driftThresholdMs: 600, checkIntervalMs: 2000 } as SyncConfig,
   queueLimitPerUser: 5,
+  tab: 'chat' as RoomTab,
+  addingMusic: false,
+  playerVisible: false,
 };
 
 export const useRoomStore = create<RoomStoreState>((set) => ({
@@ -127,4 +140,13 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
   setChatOpen: (chatOpen) =>
     set((s) => ({ chatOpen, unreadMentions: chatOpen ? 0 : s.unreadMentions })),
   addUnreadMention: () => set((s) => ({ unreadMentions: s.unreadMentions + 1 })),
+  // The chat tab on screen is what clears mention badges.
+  setTab: (tab) =>
+    set((s) => ({
+      tab,
+      chatOpen: tab === 'chat',
+      unreadMentions: tab === 'chat' ? 0 : s.unreadMentions,
+    })),
+  setAddingMusic: (addingMusic) => set({ addingMusic }),
+  setPlayerVisible: (playerVisible) => set({ playerVisible }),
 }));

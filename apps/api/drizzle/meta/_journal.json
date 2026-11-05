@@ -43,6 +43,13 @@
       "when": 1793756449202,
       "tag": "0005_great_saracen",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793869686399,
+      "tag": "0006_tough_beyonder",
+      "breakpoints": true
     }
   ]
 }

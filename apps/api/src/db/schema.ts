@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  customType,
   date,
   index,
   integer,
@@ -16,6 +17,11 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import type { Avatar, ChatMedia, ChatMention } from '@spotibay/shared';
+
+/** Raw bytes (an image), read and written as a Buffer. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
 
 export const roomVisibility = pgEnum('room_visibility', ['public', 'private']);
 export const queueMode = pgEnum('queue_mode', ['fifo', 'fair']);
@@ -204,9 +210,49 @@ export const chatMessages = pgTable(
     createdAt: createdAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedByAdminId: uuid('deleted_by_admin_id').references(() => admins.id),
+    /** A room host who removed it (photos only). */
+    deletedByUserId: uuid('deleted_by_user_id').references(() => users.id),
   },
   (t) => [index('chat_messages_room_created_idx').on(t.roomId, t.createdAt)],
 );
+
+/**
+ * Photos posted in a room's chat. They only live as long as the chat needs them: deleted when
+ * the room closes, after a day, or by a moderator. Uploads never attached to a message go soon.
+ */
+export const chatPhotos = pgTable(
+  'chat_photos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    roomId: uuid('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    messageId: uuid('message_id').references(() => chatMessages.id, { onDelete: 'set null' }),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    size: integer('size').notNull(),
+    bytes: bytea('bytes').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('chat_photos_room_idx').on(t.roomId),
+    index('chat_photos_created_idx').on(t.createdAt),
+  ],
+);
+
+/** A person's own photo as their avatar (WebP, square). Replaced photos are deleted. */
+export const avatarPhotos = pgTable('avatar_photos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  bytes: bytea('bytes').notNull(),
+  createdAt: createdAt(),
+});
 
 export const chatMessageReactions = pgTable(
   'chat_message_reactions',

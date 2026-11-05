@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { chatMediaSchema } from './chat.js';
 import { avatarSchema } from './identity.js';
-import { memberSchema, nowPlayingSchema, roomVisibilitySchema } from './rooms.js';
+import { memberSchema, nowPlayingSchema, roomCodeSchema, roomVisibilitySchema } from './rooms.js';
 import { queueItemSchema, playbackStateSchema, queueModeSchema } from './playback.js';
 import { announcementSchema, settingKeys, type SettingKey } from './settings.js';
 
@@ -24,6 +24,8 @@ export const settingDescriptions: Record<SettingKey, string> = {
     'Suggest songs from the Deezer catalog while typing. Off: search goes straight to YouTube.',
   'features.gifs':
     'Let people send GIFs and stickers in chat (from KLIPY). Needs KLIPY_API_KEY on the server.',
+  'features.chatPhotos':
+    'Let people post photos in chat. Photos are deleted when the room closes or after 24 hours.',
   'features.autoplay':
     'Let hosts turn on autoplay, which queues a related song when the queue runs out. Uses no YouTube searches.',
   'limits.maxActiveRooms': 'Open rooms allowed at the same time.',
@@ -34,6 +36,7 @@ export const settingDescriptions: Record<SettingKey, string> = {
     'YouTube searches one person can run per minute. Cached searches and songs someone already added are free.',
   'limits.suggestionsPerMinute': 'Song suggestion requests one address can make per minute.',
   'limits.gifSearchesPerMinute': 'GIF and sticker searches one person can run per minute.',
+  'limits.chatPhotosPerMinute': 'Photos one person can post in chat per minute.',
   'limits.maxPlaylistImportItems': 'Most tracks imported from one YouTube playlist.',
   'limits.chatMessageMaxLength': 'Longest chat message, in characters.',
   'limits.chatMessagesPerMinute': 'Chat messages one person can send per minute.',
@@ -71,6 +74,7 @@ export const publicSettingKeys = [
   'features.playlistImport',
   'features.search',
   'features.gifs',
+  'features.chatPhotos',
   'limits.chatMessageMaxLength',
   'limits.maxQueueItemsPerUser',
   'site.maintenanceMode',
@@ -100,11 +104,21 @@ export type AdminSettingsResponse = z.infer<typeof adminSettingsResponseSchema>;
 
 export const adminSettingUpdateBodySchema = z.object({ value: z.unknown() });
 
+/** `POST /api/admin/photos/purge`: every chat photo in one room, or everywhere without a code. */
+export const adminPurgePhotosBodySchema = z.object({ roomCode: roomCodeSchema.optional() });
+export const adminPurgePhotosResponseSchema = z.object({
+  messages: z.number().int().nonnegative(),
+  photos: z.number().int().nonnegative(),
+});
+export type AdminPurgePhotosResponse = z.infer<typeof adminPurgePhotosResponseSchema>;
+
 export const siteResponseSchema = z.object({
   maintenance: z.boolean(),
   announcement: announcementSchema.nullable(),
   /** GIFs and stickers are switched on and the server has a provider key. */
   gifs: z.boolean(),
+  /** Photos can be posted in chat. */
+  photos: z.boolean(),
 });
 export type SiteResponse = z.infer<typeof siteResponseSchema>;
 

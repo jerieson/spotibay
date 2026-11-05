@@ -22,6 +22,7 @@ import { hit } from '../lib/rate-limit.js';
 import { maskFilteredWords } from '../lib/word-filter.js';
 import { toReply, type ChatStore } from './chat-store.js';
 import { GifError, type GifService } from './gifs.js';
+import { PhotoError, type PhotoService } from './photos.js';
 
 export type ChatErrorCode = 'invalid_payload' | 'rate_limited' | 'feature_disabled';
 
@@ -46,6 +47,8 @@ export interface ChatServiceDeps {
   redis: Redis;
   settings: { get<K extends SettingKey>(key: K): SettingsValues[K] };
   gifs: Pick<GifService, 'resolve'>;
+  /** Photos in chat; without it, photo messages are refused. */
+  photos?: Pick<PhotoService, 'forMessage' | 'attach' | 'deleteForMessages'>;
   /** Who is in the room right now; only they can be mentioned. */
   members: (roomId: string) => Promise<{ userId: string; displayName: string }[]>;
   now?: () => number;
@@ -56,6 +59,7 @@ export function createChatService({
   redis,
   settings,
   gifs,
+  photos,
   members,
   now = Date.now,
 }: ChatServiceDeps) {
@@ -92,8 +96,22 @@ export function createChatService({
     return toReply(target);
   }
 
-  async function resolveMedia(input: ChatSend['media']): Promise<ChatMedia | null> {
+  async function resolveMedia(
+    roomId: string,
+    userId: string,
+    input: ChatSend['media'],
+  ): Promise<ChatMedia | null> {
     if (!input) return null;
+    if (input.kind === 'photo') {
+      if (!photos) throw new ChatError('feature_disabled', 'Photos in chat are turned off');
+      try {
+        return await photos.forMessage(roomId, userId, input.id);
+      } catch (err) {
+        if (!(err instanceof PhotoError)) throw err;
+        if (err.code === 'photos_disabled') throw new ChatError('feature_disabled', err.message);
+        throw new ChatError('invalid_payload', err.message);
+      }
+    }
     try {
       return await gifs.resolve(input.kind, input.id);
     } catch (err) {
@@ -121,7 +139,7 @@ export function createChatService({
 
     const [replyTo, media, mentions] = await Promise.all([
       resolveReply(roomId, input.replyToId),
-      resolveMedia(input.media),
+      resolveMedia(roomId, author.userId, input.media),
       // Matched before masking, so a filtered word can't hide a name.
       resolveMentions(roomId, input.body, input.mentionIds ?? []),
     ]);
@@ -134,6 +152,7 @@ export function createChatService({
       mentions,
       media,
     });
+    if (media?.kind === 'photo') await photos?.attach(media.id, row.id);
     const message: ChatMessage = {
       kind: 'user',
       id: row.id,
@@ -207,6 +226,23 @@ export function createChatService({
     for (const listener of reactionListeners) listener(roomId, reaction);
   }
 
+  /**
+   * The room's host takes down a photo message: the message disappears for everyone and the
+   * photo is deleted. Only photo messages; the caller checks that `userId` is the host.
+   */
+  async function deletePhoto(roomId: string, userId: string, messageId: string): Promise<void> {
+    const target = await store.findInRoom(roomId, messageId);
+    if (!target || target.deleted) {
+      throw new ChatError('invalid_payload', 'That message is no longer available');
+    }
+    if (target.media?.kind !== 'photo') {
+      throw new ChatError('invalid_payload', 'Only photo messages can be removed here');
+    }
+    if (!(await store.deleteByUser(roomId, messageId, userId))) return;
+    await photos?.deleteForMessages([messageId]);
+    announceDeleted(roomId, messageId);
+  }
+
   /** Tells the room a message was removed by a moderator. */
   function announceDeleted(roomId: string, messageId: string): void {
     for (const listener of deletedListeners) listener(roomId, messageId);
@@ -215,6 +251,7 @@ export function createChatService({
   return {
     send,
     reactToMessage,
+    deletePhoto,
     announceDeleted,
     system,
     history,

@@ -15,6 +15,7 @@ import {
   adminBanQuerySchema,
   adminChatQuerySchema,
   adminLoginBodySchema,
+  adminPurgePhotosBodySchema,
   adminSettingUpdateBodySchema,
   adminUserQuerySchema,
   auditQuerySchema,
@@ -27,6 +28,7 @@ import {
 import { hit } from '../lib/rate-limit.js';
 import { validateBody, validateQuery } from '../lib/validate.js';
 import { readCookie } from '../middleware/session.js';
+import { sendImage } from './photos.js';
 import type { AdminAuth, AdminRecord } from '../services/admin-auth.js';
 import { AdminError, type AdminService } from '../services/admin.js';
 
@@ -207,6 +209,16 @@ export function createAdminRouter({ auth, admin, redis, secureCookie }: AdminRou
     }),
   );
 
+  router.delete(
+    '/users/:id/avatar-photo',
+    handle(async (req, res) => {
+      const id = uuidSchema.safeParse(req.params.id);
+      if (!id.success) throw new AdminError('not_found', 'User not found');
+      await admin.removeAvatarPhoto(adminId(req), id.data);
+      res.status(204).end();
+    }),
+  );
+
   router.get(
     '/bans',
     validateQuery(adminBanQuerySchema),
@@ -250,6 +262,35 @@ export function createAdminRouter({ auth, admin, redis, secureCookie }: AdminRou
       if (!id.success) throw new AdminError('not_found', 'Message not found');
       await admin.deleteMessage(adminId(req), id.data);
       res.status(204).end();
+    }),
+  );
+
+  router.get(
+    '/photos/:id',
+    handle(async (req, res) => {
+      const id = uuidSchema.safeParse(req.params.id);
+      const bytes = id.success ? await admin.photo(id.data) : null;
+      if (!bytes) throw new AdminError('not_found', 'That photo is no longer available');
+      sendImage(res, bytes, 'private, no-store');
+    }),
+  );
+
+  router.get(
+    '/avatars/:id',
+    handle(async (req, res) => {
+      const id = uuidSchema.safeParse(req.params.id);
+      const bytes = id.success ? await admin.avatarPhoto(id.data) : null;
+      if (!bytes) throw new AdminError('not_found', 'No such photo');
+      sendImage(res, bytes, 'private, no-store');
+    }),
+  );
+
+  router.post(
+    '/photos/purge',
+    validateBody(adminPurgePhotosBodySchema),
+    handle(async (req, res) => {
+      const { roomCode } = req.body as z.infer<typeof adminPurgePhotosBodySchema>;
+      res.json(await admin.purgePhotos(adminId(req), roomCode));
     }),
   );
 

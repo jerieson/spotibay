@@ -1,5 +1,6 @@
-import { Dices, KeyRound, TriangleAlert } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Dices, ImagePlus, KeyRound, Trash2, TriangleAlert } from 'lucide-react';
+import { useRef, useState, type FormEvent } from 'react';
 import {
   avatarBackgrounds,
   avatarStyles,
@@ -14,12 +15,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  sessionKey,
   useRecoverAccount,
   useRegenerateRecoveryCode,
   useSession,
   useUpdateProfile,
 } from '@/hooks/use-session';
 import { avatarStyleLabels, randomSeed } from '@/lib/avatar';
+import { removeAvatarPhoto, setAvatarPhoto } from '@/lib/api';
+import { shrinkImage } from '@/lib/shrink-image';
 import { cn } from '@/lib/utils';
 import { useRecoveryStore } from '@/stores/recovery';
 import { ApiError, friendlyError } from '@/lib/errors';
@@ -63,11 +67,16 @@ function Section({
 function ProfileForm({ user }: { user: User }) {
   const update = useUpdateProfile();
   const [name, setName] = useState(user.displayName);
-  const [avatar, setAvatar] = useState<Avatar>(user.avatar);
+  const [avatar, setAvatar] = useState<Avatar>(withoutPhoto(user.avatar));
+  const photo = usePhotoAvatar();
+  const photoId = user.avatar.photoId;
+  /** What others see: the photo when there is one, else the generated avatar being edited. */
+  const shown: Avatar = photoId ? { ...avatar, photoId } : avatar;
 
   const nameCheck = displayNameSchema.safeParse(name);
   const dirty =
-    name.trim() !== user.displayName || JSON.stringify(avatar) !== JSON.stringify(user.avatar);
+    name.trim() !== user.displayName ||
+    JSON.stringify(avatar) !== JSON.stringify(withoutPhoto(user.avatar));
   const serverError = update.error && friendlyError(update.error);
 
   function submit(e: FormEvent) {
@@ -79,8 +88,16 @@ function ProfileForm({ user }: { user: User }) {
   return (
     <form onSubmit={submit}>
       <Section title="Name and avatar" description="This is how others see you in rooms.">
-        <div className="flex items-center gap-4">
-          <UserAvatar avatar={avatar} name={name} className="size-24" />
+        <div
+          className="flex items-center gap-4"
+          onPaste={(e) => {
+            const file = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'));
+            if (!file) return;
+            e.preventDefault();
+            photo.set.mutate(file);
+          }}
+        >
+          <UserAvatar avatar={shown} name={name} className="size-24" />
           <div className="flex-1 space-y-2">
             <Label htmlFor="display-name">Display name</Label>
             <Input
@@ -96,8 +113,52 @@ function ProfileForm({ user }: { user: User }) {
         </div>
 
         <div className="space-y-2">
+          <Label>Photo</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={photo.fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) photo.set.mutate(file);
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={photo.busy}
+              onClick={() => photo.fileRef.current?.click()}
+            >
+              <ImagePlus className="size-4" /> {photoId ? 'Change photo' : 'Upload a photo'}
+            </Button>
+            {photoId && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={photo.busy}
+                onClick={() => photo.remove.mutate()}
+              >
+                <Trash2 className="size-4" /> Remove photo
+              </Button>
+            )}
+            <p className="text-sm text-muted-foreground" role="status">
+              {photo.set.isPending
+                ? 'Uploading…'
+                : photo.error
+                  ? photo.error
+                  : 'Or paste a picture here. It is cropped to a circle; others see it in rooms you join.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label>Style</Label>
+            <Label>{photoId ? 'Generated avatar (shown if you remove your photo)' : 'Style'}</Label>
             <Button
               type="button"
               variant="outline"
@@ -262,4 +323,30 @@ function RestoreSection() {
       </Section>
     </form>
   );
+}
+
+function withoutPhoto(avatar: Avatar): Avatar {
+  const rest = { ...avatar };
+  delete rest.photoId;
+  return rest;
+}
+
+/** Upload or remove the avatar photo; the saved profile updates the session right away. */
+function usePhotoAvatar() {
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const onSuccess = (user: User) => qc.setQueryData<User>(sessionKey, user);
+  const set = useMutation({
+    mutationFn: async (file: File) => setAvatarPhoto(await shrinkImage(file, 512)),
+    onSuccess,
+  });
+  const remove = useMutation({ mutationFn: removeAvatarPhoto, onSuccess });
+  const failure = set.error ?? remove.error;
+  return {
+    fileRef,
+    set,
+    remove,
+    busy: set.isPending || remove.isPending,
+    error: failure ? friendlyError(failure) : null,
+  };
 }

@@ -33,6 +33,7 @@ import {
   createQuotaStore,
   createTrackStore,
 } from './services/queue-store.js';
+import { createAvatarPhotoService, createPhotoService } from './services/photos.js';
 import { createRoomLifecycle } from './services/room-lifecycle.js';
 import { createRoomService } from './services/rooms.js';
 import { createSearchService } from './services/search.js';
@@ -124,11 +125,14 @@ const autoplay = createAutoplayService({
   metrics,
 });
 const gifs = createGifService({ redis, settings, apiKey: env.KLIPY_API_KEY });
+const photos = createPhotoService({ db, redis, settings });
+const avatars = createAvatarPhotoService({ db, redis });
 const chat = createChatService({
   store: createChatStore(db),
   redis,
   settings,
   gifs,
+  photos,
   members: (roomId) => presence.list(roomId),
 });
 const playlists = createPlaylistService({ db, youtube, settings });
@@ -149,6 +153,8 @@ const adminService = createAdminService({
   presence,
   playback,
   chat,
+  photos,
+  avatars,
   settings,
   metrics,
   timeZone: env.ANALYTICS_TIMEZONE,
@@ -167,6 +173,8 @@ const app = createApp({
   search,
   recommendations,
   vibes,
+  photos,
+  avatars,
   gifs,
   playlists,
   library,
@@ -201,6 +209,7 @@ const io = createSocketServer({
 });
 await lifecycle.start();
 await playback.start();
+const stopPhotoCleanup = photos.startCleanup(rooms);
 
 httpServer.listen(env.PORT, () => {
   logger.info({ port: env.PORT }, 'api listening');
@@ -223,6 +232,7 @@ async function shutdown(signal: string): Promise<void> {
     autoplay.stop();
     playback.stop();
     lifecycle.stop();
+    stopPhotoCleanup();
     // Closes the http server too, so no new connections arrive while sockets drain.
     await io.close();
     await Promise.all([pool.end(), redis.quit()]);

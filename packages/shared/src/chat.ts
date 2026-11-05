@@ -44,10 +44,13 @@ export const REPLY_EXCERPT_MAX = 120;
 /** Hard cap before the `limits.chatMessageMaxLength` setting is checked by the service. */
 const MAX_RAW_BODY = 2000;
 
-export const chatMediaKindSchema = z.enum(['gif', 'sticker']);
+export const chatMediaKindSchema = z.enum(['gif', 'sticker', 'photo']);
 export type ChatMediaKind = z.infer<typeof chatMediaKindSchema>;
 
-/** A GIF or sticker. Only the server builds these, from the provider's own data. */
+/**
+ * A GIF, sticker or photo. Only the server builds these: GIFs and stickers from the provider's
+ * own data, photos from an upload to `POST /api/rooms/:code/photos`.
+ */
 export const chatMediaSchema = z.object({
   kind: chatMediaKindSchema,
   /** The provider's slug. */
@@ -82,7 +85,15 @@ export const chatReplySchema = z.object({
 });
 export type ChatReply = z.infer<typeof chatReplySchema>;
 
-/** `chat:send`. A message needs text or a GIF/sticker; the server fills in everything else. */
+/** `POST /api/rooms/:code/photos`: the uploaded photo, to send with `chat:send` as `photo` media. */
+export const chatPhotoUploadResponseSchema = z.object({
+  id: z.uuid(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+export type ChatPhotoUploadResponse = z.infer<typeof chatPhotoUploadResponseSchema>;
+
+/** `chat:send`. A message needs text or media; the server fills in everything else. */
 export const chatSendSchema = z
   .object({
     body: z.string().trim().max(MAX_RAW_BODY).default(''),

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   REPLY_EXCERPT_MAX,
@@ -55,6 +55,8 @@ export interface ChatStore {
   /** Adds the user's emoji to the message, or removes it if it was there. */
   toggleReaction(messageId: string, userId: string, emoji: ReactionEmoji): Promise<void>;
   reactionsFor(messageIds: string[]): Promise<Map<string, MessageReaction[]>>;
+  /** Marks a message deleted by a room's host; `false` when it was already gone. */
+  deleteByUser(roomId: string, id: string, userId: string): Promise<boolean>;
 }
 
 export function createChatStore(db: Db): ChatStore {
@@ -110,6 +112,20 @@ export function createChatStore(db: Db): ChatStore {
         .values(input)
         .returning({ id: chatMessages.id, createdAt: chatMessages.createdAt });
       return row!;
+    },
+    async deleteByUser(roomId, id, userId) {
+      const rows = await db
+        .update(chatMessages)
+        .set({ deletedAt: new Date(), deletedByUserId: userId })
+        .where(
+          and(
+            eq(chatMessages.id, id),
+            eq(chatMessages.roomId, roomId),
+            isNull(chatMessages.deletedAt),
+          ),
+        )
+        .returning({ id: chatMessages.id });
+      return rows.length > 0;
     },
     async findInRoom(roomId, id) {
       const [row] = await db
