@@ -1,11 +1,11 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
+  CassetteTape,
   CloudRain,
   Coffee,
-  Disc3,
-  Flame,
   Headphones,
+  TrendingUp,
   Users,
   Zap,
   type LucideIcon,
@@ -48,8 +48,8 @@ export function HomePage() {
           <JoinByCode />
         </div>
       </section>
-      <Vibes />
       <ForYou />
+      <Vibes />
       <PublicRooms />
     </div>
   );
@@ -94,14 +94,13 @@ const VIBE_KEY = 'home:vibe';
 /** Cached on the server for the day, so a short stale time only saves a refetch. */
 const VIBE_STALE_MS = 10 * 60 * 1000;
 
-/** How each vibe looks: an icon and a soft colour wash behind it. */
-const vibeLooks: Record<VibeId, { icon: LucideIcon; wash: string; iconColor: string }> = {
-  'work-mode': { icon: Zap, wash: 'bg-amber-400/25', iconColor: 'text-amber-500' },
-  chillero: { icon: Coffee, wash: 'bg-teal-400/25', iconColor: 'text-teal-500' },
-  'ultimate-relapse': { icon: CloudRain, wash: 'bg-sky-400/25', iconColor: 'text-sky-500' },
-  trending: { icon: Flame, wash: 'bg-volt/25', iconColor: 'text-volt-text' },
-  throwback: { icon: Disc3, wash: 'bg-fuchsia-400/25', iconColor: 'text-fuchsia-500' },
-  focus: { icon: Headphones, wash: 'bg-violet-400/25', iconColor: 'text-violet-500' },
+const vibeIcons: Record<VibeId, LucideIcon> = {
+  'work-mode': Zap,
+  chillero: Coffee,
+  'ultimate-relapse': CloudRain,
+  trending: TrendingUp,
+  throwback: CassetteTape,
+  focus: Headphones,
 };
 
 function storedVibe(): VibeId {
@@ -149,8 +148,7 @@ function Vibes() {
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {VIBES.map((v) => {
-          const look = vibeLooks[v.id];
-          const Icon = look.icon;
+          const Icon = vibeIcons[v.id];
           const selected = v.id === vibeId;
           return (
             <button
@@ -159,21 +157,20 @@ function Vibes() {
               aria-pressed={selected}
               onClick={() => pick(v.id)}
               className={cn(
-                'relative overflow-hidden rounded-2xl border bg-card p-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                selected ? 'border-volt ring-1 ring-volt' : 'hover:border-volt/60',
+                'flex flex-col items-start justify-start rounded-2xl border p-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                selected
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'bg-card hover:border-foreground/40',
               )}
             >
+              <Icon className="size-5" strokeWidth={1.75} aria-hidden />
+              <span className="mt-3 block font-display font-semibold leading-tight">{v.name}</span>
               <span
                 className={cn(
-                  'pointer-events-none absolute -top-8 -right-8 size-24 rounded-full blur-2xl',
-                  look.wash,
+                  'mt-0.5 block text-xs',
+                  selected ? 'text-background/70' : 'text-muted-foreground',
                 )}
-              />
-              <Icon className={cn('relative size-6', look.iconColor)} aria-hidden />
-              <span className="relative mt-3 block font-display font-bold leading-tight">
-                {v.name}
-              </span>
-              <span className="relative mt-0.5 block text-xs text-muted-foreground">
+              >
                 {v.tagline}
               </span>
             </button>
@@ -199,7 +196,7 @@ function Vibes() {
   );
 }
 
-/** Songs that go with the last one you played; hidden until you've played something. */
+/** Songs from what you played and queued, led by the newest; popular songs until you have any. */
 function ForYou() {
   const session = useSession();
   const recs = useQuery({
@@ -210,20 +207,22 @@ function ForYou() {
     retry: false,
   });
 
-  // Before there's any history the list is just the chart, which the Trending vibe already shows.
-  if (recs.data?.basedOn !== 'history' || recs.data.suggestions.length === 0) return null;
+  if (!recs.data || recs.data.suggestions.length === 0) return null;
+  const fromHistory = recs.data.basedOn === 'history';
   const { seed } = recs.data;
 
   return (
     <section className="space-y-3" aria-labelledby="for-you-title">
       <div>
         <h2 id="for-you-title" className="font-display text-xl font-bold">
-          For you
+          {fromHistory ? 'For you' : 'Popular right now'}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {seed
-            ? `Because you played ${seed.title} by ${seed.artist}. Tap one to start a room with it.`
-            : "Picked from what you've played. Tap one to start a room with it."}
+          {!fromHistory
+            ? 'Most played songs. Play or queue a few and these become picks for you.'
+            : seed
+              ? `Because you played ${seed.title} by ${seed.artist}.`
+              : "Picked from what you've played and queued."}
         </p>
       </div>
       <SongRow songs={recs.data.suggestions} label="For you" />

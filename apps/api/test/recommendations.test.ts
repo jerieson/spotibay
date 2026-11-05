@@ -101,7 +101,8 @@ describe('GET /api/recommendations', () => {
     const res = await recommendations(g);
     expect(res.status).toBe(200);
     expect(res.body.basedOn).toBe('chart');
-    expect(ids(res)).toEqual(['201', '301']);
+    // Shuffled, so only who's in it is fixed.
+    expect(ids(res).sort()).toEqual(['201', '301']);
   });
 
   it('suggests from the radios of the artists played, without YouTube', async () => {
@@ -347,5 +348,33 @@ describe('picks led by the last song', () => {
     const got = ids(await recommendations(other));
     expect(got[0]).toBe('104');
     expect(got).not.toContain('103');
+  });
+
+  it('count songs someone queued, even before they played', async () => {
+    const g = await h.guest();
+    const r = await room(g.user.id);
+    await played(g.user.id, r.id, [
+      { videoId: 'kathang0000', title: 'Kathang Isip', channelTitle: 'Ben&Ben', catalogId: '201' },
+    ]);
+    await h.db.insert(tracks).values({
+      videoId: 'multo000000',
+      title: 'Multo',
+      channelTitle: 'Cup of Joe',
+      durationSec: 240,
+      thumbnailUrl: 'https://i.ytimg.com/x.jpg',
+      catalogId: '101',
+    });
+    await h.db.insert(queueItems).values({
+      roomId: r.id,
+      videoId: 'multo000000',
+      addedBy: g.user.id,
+      position: 1,
+      status: 'queued',
+      createdAt: new Date(Date.now() + 1000),
+    });
+    const res = await recommendations(g);
+    expect(res.body.basedOn).toBe('history');
+    expect(res.body.seed).toEqual({ title: 'Multo', artist: 'Cup of Joe' });
+    expect(ids(res)).not.toContain('101');
   });
 });

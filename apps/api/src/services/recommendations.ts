@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { catalogTrackSchema, type CatalogTrack, type Track } from '@spotibay/shared';
 import { z } from 'zod';
@@ -62,6 +62,16 @@ const cachedSchema = z.object({
   suggestions: z.array(catalogTrackSchema),
 });
 
+/** A copy of `items` in random order. */
+function shuffled<T>(items: readonly T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
 /** A played track, newest first. */
 interface Play {
   catalogId: string | null;
@@ -113,15 +123,48 @@ export function createRecommendationService({
     track,
   });
 
+  /**
+   * What someone listened to and what they queued themselves (even songs that never got to
+   * play), newest first, each song once.
+   */
   async function userPlays(userId: string): Promise<Play[]> {
-    const rows = await db
-      .select(trackColumns)
-      .from(listenHistory)
-      .innerJoin(tracks, eq(tracks.videoId, listenHistory.videoId))
-      .where(eq(listenHistory.userId, userId))
-      .orderBy(desc(listenHistory.id))
-      .limit(USER_PLAYS);
-    return rows.map(toPlay);
+    const [heard, queued] = await Promise.all([
+      db
+        .select({ ...trackColumns, at: listenHistory.playedAt })
+        .from(listenHistory)
+        .innerJoin(tracks, eq(tracks.videoId, listenHistory.videoId))
+        .where(eq(listenHistory.userId, userId))
+        .orderBy(desc(listenHistory.id))
+        .limit(USER_PLAYS),
+      db
+        .select({ ...trackColumns, at: queueItems.createdAt })
+        .from(queueItems)
+        .innerJoin(tracks, eq(tracks.videoId, queueItems.videoId))
+        .where(
+          and(
+            eq(queueItems.addedBy, userId),
+            eq(queueItems.source, 'user'),
+            ne(queueItems.status, 'removed'),
+          ),
+        )
+        .orderBy(desc(queueItems.createdAt))
+        .limit(USER_PLAYS),
+    ]);
+    const seen = new Set<string>();
+    return [...heard, ...queued]
+      .sort((a, b) => b.at.getTime() - a.at.getTime())
+      .filter((r) => !seen.has(r.videoId) && seen.add(r.videoId))
+      .slice(0, USER_PLAYS)
+      .map((r) =>
+        toPlay({
+          catalogId: r.catalogId,
+          videoId: r.videoId,
+          title: r.title,
+          channelTitle: r.channelTitle,
+          thumbnailUrl: r.thumbnailUrl,
+          durationSec: r.durationSec,
+        }),
+      );
   }
 
   async function roomPlays(roomId: string): Promise<Play[]> {
@@ -330,8 +373,8 @@ export function createRecommendationService({
     enabled: () => settings.get('features.catalogSearch'),
 
     /**
-     * Suggestions for someone, led by the last song they played; the top chart before they have
-     * played anything. A new song played gives a new list.
+     * Suggestions for someone from what they played and queued, led by the newest; the top chart,
+     * shuffled, before they have any. A new song played or queued gives a new list.
      */
     async forUser(userId: string): Promise<Recommendations> {
       const plays = await userPlays(userId);
@@ -340,9 +383,10 @@ export function createRecommendationService({
         const { suggestions, seed, complete } = await fromPlays(plays);
         const ttl = complete ? CACHE_TTL_SEC : PARTIAL_CACHE_TTL_SEC;
         if (suggestions.length > 0) return { basedOn: 'history', seed, suggestions, ttl };
-        // Deezer was busy before anything was found: the chart stands in only briefly.
+        // Nothing played yet: the most played songs, in a new order each time the list is built.
+        // (If Deezer was busy before anything was found, the chart stands in only briefly.)
         const chart = await catalog.topCharts();
-        return { basedOn: 'chart', seed: null, suggestions: chart.songs, ttl };
+        return { basedOn: 'chart', seed: null, suggestions: shuffled(chart.songs), ttl };
       });
     },
 
