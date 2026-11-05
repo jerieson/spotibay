@@ -1,4 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
+import {
+  Activity,
+  DoorOpen,
+  ListMusic,
+  Music2,
+  Search,
+  UserPlus,
+  Users,
+  Wifi,
+  type LucideIcon,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DASHBOARD_RECENT_DAYS, type AdminDashboard } from '@spotibay/shared';
 import {
@@ -15,6 +27,7 @@ import {
   ColumnChart,
   DAILY_QUOTA_UNITS,
   RankedBars,
+  Sparkline,
   TrendChart,
   formatDay,
   formatHour,
@@ -36,37 +49,48 @@ export function DashboardPage() {
   const dashboard = useQuery({
     queryKey: ['admin', 'dashboard'],
     queryFn: adminApi.dashboard,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
   const d = dashboard.data;
 
-  const tiles = [
-    { label: 'Open rooms', value: stats.data?.rooms },
-    { label: 'Users online', value: stats.data?.usersOnline },
-    { label: 'Plays today', value: d?.totals.playsToday },
-    { label: 'New users today', value: d?.totals.newUsersToday },
-    { label: 'Active in 24 hours', value: d?.totals.activeUsers },
-    { label: 'All users', value: d?.totals.users },
-    { label: 'Playlists', value: d?.totals.playlists },
+  const plays = d?.playsPerDay.map((p) => p.count);
+  const signups = d?.newUsersPerDay.map((p) => p.count);
+  const tiles: Tile[] = [
+    { label: 'Open rooms', icon: DoorOpen, value: stats.data?.rooms, live: true },
+    { label: 'Users online', icon: Wifi, value: stats.data?.usersOnline, live: true },
+    { label: 'Plays today', icon: Music2, value: d?.totals.playsToday, trend: plays },
+    { label: 'New users today', icon: UserPlus, value: d?.totals.newUsersToday, trend: signups },
+    { label: 'Active in 24 hours', icon: Activity, value: d?.totals.activeUsers },
+    { label: 'All users', icon: Users, value: d?.totals.users },
+    { label: 'Playlists', icon: ListMusic, value: d?.totals.playlists },
     {
       label: 'Searches today',
+      icon: Search,
       value: quota.data && `${quota.data.today.searchCalls} / ${quota.data.searchCallBudget}`,
     },
   ];
+  const today = d?.playsPerDay.at(-1)?.date;
 
   return (
     <>
       <PageHeader title="Dashboard">
-        {d && <p className="text-sm text-muted-foreground">Days and hours in {d.timeZone}</p>}
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LiveDot />
+          <span>
+            Live
+            {dashboard.dataUpdatedAt > 0 && (
+              <>
+                {' '}
+                · updated <Ago at={dashboard.dataUpdatedAt} />
+              </>
+            )}
+            {d && <> · days and hours in {d.timeZone}</>}
+          </span>
+        </p>
       </PageHeader>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {tiles.map((t) => (
-          <Card key={t.label}>
-            <p className="text-sm text-muted-foreground">{t.label}</p>
-            <p className="mt-1 font-display text-3xl font-extrabold tabular-nums">
-              {typeof t.value === 'number' ? t.value.toLocaleString() : (t.value ?? '–')}
-            </p>
-          </Card>
+          <StatTile key={t.label} tile={t} />
         ))}
       </div>
       <div className="mt-4">
@@ -79,7 +103,7 @@ export function DashboardPage() {
             description="Songs played to the end, last 14 days."
             table={dayTable(d.playsPerDay, 'Plays')}
           >
-            <ColumnChart data={days(d.playsPerDay)} label="Plays" />
+            <ColumnChart data={days(d.playsPerDay)} label="Plays" highlight={today} />
           </ChartCard>
           <ChartCard
             title="Busiest hours"
@@ -97,6 +121,7 @@ export function DashboardPage() {
               }))}
               label="Plays"
               tickInterval={2}
+              highlight={hourIn(d.timeZone)}
             />
           </ChartCard>
           <ChartCard
@@ -104,7 +129,11 @@ export function DashboardPage() {
             description="Guest accounts created, last 14 days."
             table={dayTable(d.newUsersPerDay, 'New users')}
           >
-            <ColumnChart data={days(d.newUsersPerDay)} label="New users" />
+            <ColumnChart
+              data={days(d.newUsersPerDay)}
+              label="New users"
+              highlight={d.newUsersPerDay.at(-1)?.date}
+            />
           </ChartCard>
           <MatchSources sources={d.matchSources} />
           {quota.data && (
@@ -134,6 +163,7 @@ export function DashboardPage() {
                   value: q.units,
                 }))}
                 label="Units"
+                hue="chart-2"
                 limit={{ value: DAILY_QUOTA_UNITS, label: 'Allowance' }}
               />
             </ChartCard>
@@ -144,6 +174,79 @@ export function DashboardPage() {
       )}
     </>
   );
+}
+
+interface Tile {
+  label: string;
+  icon: LucideIcon;
+  value: number | string | undefined;
+  /** Kept fresh over the socket. */
+  live?: boolean;
+  /** The last days, oldest first; the last entry is today. */
+  trend?: number[];
+}
+
+function StatTile({ tile }: { tile: Tile }) {
+  const { label, icon: Icon, value, live, trend } = tile;
+  const yesterday = trend?.at(-2);
+  const now = trend?.at(-1);
+  const change =
+    yesterday !== undefined && now !== undefined && yesterday > 0
+      ? Math.round(((now - yesterday) / yesterday) * 100)
+      : null;
+  return (
+    <Card className="flex flex-col">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        {live ? <LiveDot /> : <Icon className="size-4 text-muted-foreground" aria-hidden />}
+      </div>
+      <p className="mt-1 font-display text-3xl font-extrabold tabular-nums">
+        {typeof value === 'number' ? value.toLocaleString() : (value ?? '–')}
+      </p>
+      {change !== null && (
+        <p className="text-xs text-muted-foreground">
+          {change > 0 ? '+' : ''}
+          {change}% vs yesterday
+        </p>
+      )}
+      {trend && trend.some((v) => v > 0) && (
+        <div className="mt-auto pt-2">
+          <Sparkline values={trend} label={label} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** The hour of day now in `timeZone`, as the busiest-hours chart keys it ("0" to "23"). */
+function hourIn(timeZone: string): string {
+  const hour = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    hourCycle: 'h23',
+    timeZone,
+  }).format(new Date());
+  return String(Number(hour));
+}
+
+/** A pulsing dot: this number updates by itself. */
+function LiveDot() {
+  return (
+    <span className="relative flex size-2" aria-hidden>
+      <span className="live-dot absolute inline-flex size-full animate-ping rounded-full bg-chart-1 opacity-60" />
+      <span className="relative inline-flex size-2 rounded-full bg-chart-1" />
+    </span>
+  );
+}
+
+/** "12s ago", ticking. */
+function Ago({ at }: { at: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+  const sec = Math.max(0, Math.round((now - at) / 1000));
+  return <>{sec < 60 ? `${sec}s ago` : `${Math.round(sec / 60)}m ago`}</>;
 }
 
 const sourceLabels: Record<keyof AdminDashboard['matchSources'], string> = {

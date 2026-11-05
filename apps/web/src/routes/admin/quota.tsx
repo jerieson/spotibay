@@ -50,6 +50,7 @@ export function QuotaPage() {
             <TrendChart
               data={q.days.map((d) => ({ key: d.date, tick: formatDay(d.date), value: d.units }))}
               label="Units"
+              hue="chart-2"
               limit={{ value: DAILY_QUOTA_UNITS, label: 'Allowance' }}
             />
             <Table className="mt-4">
@@ -106,7 +107,7 @@ function Meter({
         value={pct}
         aria-label={label}
         className="mt-2 bg-muted"
-        indicatorClassName={pct >= 90 ? 'bg-destructive' : 'bg-chart-1'}
+        indicatorClassName={pct >= 90 ? 'bg-destructive' : 'bg-chart-2'}
       />
       {pct >= 90 && <p className="mt-1 text-sm text-destructive">Almost used up for today.</p>}
       {note && <p className="mt-1 text-sm text-muted-foreground">{note}</p>}

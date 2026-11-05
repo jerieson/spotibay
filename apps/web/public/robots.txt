@@ -1,0 +1,36 @@
+# Spotibay: search engines may list the home page; nothing else is for crawling.
+# robots.txt is a request, not a lock. Bots that ignore it are blocked at Cloudflare.
+
+# AI training and AI answer crawlers: not welcome anywhere.
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: OAI-SearchBot
+User-agent: ClaudeBot
+User-agent: Claude-Web
+User-agent: anthropic-ai
+User-agent: CCBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Bytespider
+User-agent: Amazonbot
+User-agent: meta-externalagent
+User-agent: FacebookBot
+User-agent: cohere-ai
+User-agent: Diffbot
+User-agent: ImagesiftBot
+User-agent: Omgilibot
+User-agent: Timpibot
+Disallow: /
+
+# Everyone else: the home page only. Rooms, the library, the admin panel and the API are
+# per-person pages, not content.
+User-agent: *
+Disallow: /api/
+Disallow: /socket.io/
+Disallow: /admin
+Disallow: /r/
+Disallow: /library
+Disallow: /p/
+Disallow: /profile

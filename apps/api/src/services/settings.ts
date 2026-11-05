@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { sql } from 'drizzle-orm';
 import {
   isSettingKey,
   settingKeys,
@@ -107,18 +108,21 @@ export function createSettingsService(store: SettingsStore, versionCounter: Vers
 
 export type SettingsService = ReturnType<typeof createSettingsService>;
 
-const dbStore: SettingsStore = {
+export const dbStore: SettingsStore = {
   async loadAll() {
     const rows = await db.select().from(appSettings);
     return new Map(rows.map((r) => [r.key, r.value]));
   },
   async upsert(key, value, adminId) {
+    // A null setting (no announcement, say) is stored as JSON null: drizzle would send SQL NULL,
+    // which the column refuses, so clearing it failed.
+    const stored = value === null ? sql`'null'::jsonb` : value;
     await db
       .insert(appSettings)
-      .values({ key, value, updatedByAdminId: adminId })
+      .values({ key, value: stored, updatedByAdminId: adminId })
       .onConflictDoUpdate({
         target: appSettings.key,
-        set: { value, updatedAt: new Date(), updatedByAdminId: adminId },
+        set: { value: stored, updatedAt: new Date(), updatedByAdminId: adminId },
       });
   },
 };

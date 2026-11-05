@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { settingsDefaults, type SettingKey } from '@spotibay/shared';
+import { db, pool } from '../src/db/client.js';
+import { appSettings } from '../src/db/schema.js';
 import {
   createSettingsService,
+  dbStore,
   SettingsValidationError,
   type SettingChange,
   type SettingsStore,
@@ -141,5 +145,22 @@ describe('settings service', () => {
     await expect(svc.set('features.chat', false, 'a')).rejects.toThrow('db down');
     expect(listener).not.toHaveBeenCalled();
     expect(svc.get('features.chat')).toBe(true);
+  });
+});
+
+describe('settings in the database', () => {
+  afterAll(async () => {
+    await db.delete(appSettings).where(eq(appSettings.key, 'site.announcement'));
+    await pool.end();
+  });
+
+  it('clears an announcement (stored as JSON null) and reads it back', async () => {
+    const svc = createSettingsService(dbStore, counter());
+    await svc.load();
+    await svc.set('site.announcement', { text: 'Down at 9', level: 'warning' }, null);
+    await svc.set('site.announcement', null, null);
+    const reloaded = createSettingsService(dbStore, counter());
+    await reloaded.load();
+    expect(reloaded.get('site.announcement')).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import {
   Area,
   AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ReferenceLine,
   XAxis,
   YAxis,
@@ -114,9 +115,29 @@ export function ChartCard({
   );
 }
 
-const valueConfig = (label: string): ChartConfig => ({
-  value: { label, color: 'var(--chart-1)' },
+/** Which chart hue a chart's one series wears: violet for activity, blue for YouTube quota. */
+export type ChartHue = 'chart-1' | 'chart-2';
+
+const valueConfig = (label: string, hue: ChartHue): ChartConfig => ({
+  value: { label, color: `var(--${hue})` },
 });
+
+/** An id for a chart's gradient that is safe inside `url(#…)` (React's ids hold `«»` or `:`). */
+function useFadeId(): string {
+  return `fade-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+}
+
+/** A top-to-bottom fade of the series colour, for bars and areas. */
+function Fade({ id, from, to }: { id: string; from: number; to: number }) {
+  return (
+    <defs>
+      <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="var(--color-value)" stopOpacity={from} />
+        <stop offset="100%" stopColor="var(--color-value)" stopOpacity={to} />
+      </linearGradient>
+    </defs>
+  );
+}
 
 /** 7500 -> `7.5k`, so the axis stays narrow. */
 const compact = (n: number) => (n >= 1000 ? `${n / 1000}k` : String(n));
@@ -128,20 +149,40 @@ export function ColumnChart({
   data,
   label,
   tickInterval = 'preserveStartEnd',
+  hue = 'chart-1',
+  highlight,
 }: {
   data: { key: string; tick: string; value: number }[];
   /** What a bar counts, for the tooltip. */
   label: string;
   tickInterval?: number | 'preserveStartEnd';
+  hue?: ChartHue;
+  /** The bar drawn solid (today, or this hour); the others fade. */
+  highlight?: string;
 }) {
+  const fade = useFadeId();
   return (
-    <ChartContainer config={valueConfig(label)} className="aspect-auto h-52 w-full">
+    <ChartContainer config={valueConfig(label, hue)} className="aspect-auto h-52 w-full">
       <BarChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 0 }} barCategoryGap={2}>
+        <Fade id={fade} from={0.95} to={0.35} />
         <CartesianGrid vertical={false} />
         <XAxis dataKey="tick" {...axisProps} interval={tickInterval} minTickGap={8} />
         <YAxis {...axisProps} width={32} allowDecimals={false} tickFormatter={compact} />
-        <ChartTooltip cursor content={<ChartTooltipContent />} />
-        <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} maxBarSize={28} />
+        <ChartTooltip
+          cursor={{ fill: 'var(--muted)', opacity: 0.5 }}
+          content={<ChartTooltipContent />}
+        />
+        <Bar
+          dataKey="value"
+          className="chart-glow"
+          radius={[4, 4, 0, 0]}
+          maxBarSize={28}
+          animationDuration={700}
+        >
+          {data.map((d) => (
+            <Cell key={d.key} fill={d.key === highlight ? 'var(--color-value)' : `url(#${fade})`} />
+          ))}
+        </Bar>
       </BarChart>
     </ChartContainer>
   );
@@ -152,14 +193,18 @@ export function TrendChart({
   data,
   label,
   limit,
+  hue = 'chart-1',
 }: {
   data: { key: string; tick: string; value: number }[];
   label: string;
   limit?: { value: number; label: string };
+  hue?: ChartHue;
 }) {
+  const fade = useFadeId();
   return (
-    <ChartContainer config={valueConfig(label)} className="aspect-auto h-52 w-full">
+    <ChartContainer config={valueConfig(label, hue)} className="aspect-auto h-52 w-full">
       <AreaChart data={data} margin={{ top: 12, right: 4, left: 4, bottom: 0 }}>
+        <Fade id={fade} from={0.4} to={0} />
         <CartesianGrid vertical={false} />
         <XAxis dataKey="tick" {...axisProps} interval="preserveStartEnd" minTickGap={8} />
         <YAxis {...axisProps} width={36} allowDecimals={false} tickFormatter={compact} />
@@ -181,11 +226,12 @@ export function TrendChart({
         <Area
           dataKey="value"
           type="monotone"
+          className="chart-glow"
           stroke="var(--color-value)"
           strokeWidth={2}
-          fill="var(--color-value)"
-          fillOpacity={0.15}
-          activeDot={{ r: 4 }}
+          fill={`url(#${fade})`}
+          activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--card)' }}
+          animationDuration={900}
         />
       </AreaChart>
     </ChartContainer>
@@ -206,12 +252,47 @@ export function RankedBars({ data }: { data: { label: string; value: number }[] 
           </div>
           <div className="h-2 rounded-r-[4px] bg-muted">
             <div
-              className="h-full rounded-r-[4px] bg-chart-1"
+              className="h-full rounded-r-[4px] bg-gradient-to-r from-chart-1/50 to-chart-1 transition-[width] duration-700 ease-out"
               style={{ width: `${(d.value / max) * 100}%`, minWidth: d.value > 0 ? 4 : 0 }}
             />
           </div>
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A tiny trend with no axes, for a stat tile: the shape of the last days at a glance. */
+export function Sparkline({
+  values,
+  label,
+  hue = 'chart-1',
+}: {
+  values: number[];
+  label: string;
+  hue?: ChartHue;
+}) {
+  const fade = useFadeId();
+  const data = values.map((value, i) => ({ i, value }));
+  return (
+    <ChartContainer
+      config={valueConfig(label, hue)}
+      className="aspect-auto h-10 w-full"
+      aria-hidden
+    >
+      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+        <Fade id={fade} from={0.35} to={0} />
+        <Area
+          dataKey="value"
+          type="monotone"
+          className="chart-glow"
+          stroke="var(--color-value)"
+          strokeWidth={2}
+          fill={`url(#${fade})`}
+          dot={false}
+          isAnimationActive={false}
+        />
+      </AreaChart>
+    </ChartContainer>
   );
 }
