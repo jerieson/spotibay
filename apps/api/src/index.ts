@@ -1,3 +1,5 @@
+// Must run before anything opens a connection.
+import './lib/net.js';
 import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { db, pool } from './db/client.js';
@@ -34,11 +36,13 @@ import {
 import { createRoomLifecycle } from './services/room-lifecycle.js';
 import { createRoomService } from './services/rooms.js';
 import { createSearchService } from './services/search.js';
+import { createVibeService } from './services/vibes.js';
 import { createRecommendationService } from './services/recommendations.js';
 import { settings } from './services/settings.js';
 import { createMusicBrainzLinks, createOdesliLinks } from './services/song-links.js';
 import { createBanStore, createRoomStore, createUserStore } from './services/user-store.js';
-import { createLookupCharger, createQuotaFlag, createYouTubeService } from './services/youtube.js';
+import { createLastfmSimilar } from './services/similar.js';
+import { createQuotaFlag, createYouTubeService } from './services/youtube.js';
 import { createSocketServer } from './socket/server.js';
 
 const allowedOrigin = env.APP_URL ? new URL(env.APP_URL).origin : undefined;
@@ -78,21 +82,30 @@ const youtube = createYouTubeService({
   apiKey: env.YOUTUBE_API_KEY,
   tracks: createTrackStore(db),
   quota: quotaStore,
-  chargeLookup: createLookupCharger(redis, () => settings.get('limits.videoLookupsPerUserPerDay')),
   quotaFlag: createQuotaFlag(redis),
   region: () => settings.get('search.region'),
 });
+const catalogMatches = createCatalogMatchStore(db);
 const search = createSearchService({
   redis,
   settings,
   quota: quotaStore,
   youtube,
   catalog,
-  matches: createCatalogMatchStore(db),
+  matches: catalogMatches,
   songLinks,
   metrics,
 });
-const recommendations = createRecommendationService({ db, redis, catalog, settings });
+const recommendations = createRecommendationService({
+  db,
+  redis,
+  catalog,
+  settings,
+  ...(env.LASTFM_API_KEY
+    ? { similar: createLastfmSimilar({ redis, apiKey: env.LASTFM_API_KEY }) }
+    : {}),
+});
+const vibes = createVibeService({ db, catalog, matches: catalogMatches, settings });
 const playback = createPlaybackService({
   store: playbackStore,
   queue: createQueueStore(db),
@@ -108,6 +121,7 @@ const autoplay = createAutoplayService({
   recommendations,
   matcher: search,
   settings,
+  metrics,
 });
 const gifs = createGifService({ redis, settings, apiKey: env.KLIPY_API_KEY });
 const chat = createChatService({
@@ -152,6 +166,7 @@ const app = createApp({
   playback,
   search,
   recommendations,
+  vibes,
   gifs,
   playlists,
   library,

@@ -252,6 +252,14 @@ export function createCatalogMatchStore(db: Db): CatalogMatchStore {
         .where(eq(catalogMatches.catalogId, catalogId));
       return row?.videoId ?? null;
     },
+    async findMany(catalogIds) {
+      if (catalogIds.length === 0) return new Map();
+      const rows = await db
+        .select({ catalogId: catalogMatches.catalogId, videoId: catalogMatches.videoId })
+        .from(catalogMatches)
+        .where(inArray(catalogMatches.catalogId, catalogIds));
+      return new Map(rows.map((r) => [r.catalogId, r.videoId]));
+    },
     async save(song, videoId) {
       await db.transaction(async (tx) => {
         await tx

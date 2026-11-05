@@ -20,6 +20,8 @@ beforeEach(async () => {
   await h.redis.flushdb();
   await h.db.execute('truncate table tracks, rooms, api_quota_usage cascade');
   for (const m of [h.catalogSongs, h.catalogSearch, h.artistRadios, h.appleCharts]) m.clear();
+  h.lastfmSimilar.clear();
+  h.lastfmCalls.length = 0;
   h.deezerChart.length = 0;
   h.catalogCalls.length = 0;
   h.searchCalls.length = 0;
@@ -239,5 +241,111 @@ describe('room recommendations', () => {
     const got = (await h.recommendations.forRoom(r.id)).map((s) => s.id);
     expect(got).toEqual(['202', '301', '401']);
     expect(await h.recommendations.forRoom((await room(g.user.id)).id)).toEqual([]);
+  });
+
+  it('leave out songs skipped in the room', async () => {
+    const g = await h.guest();
+    const r = await room(g.user.id);
+    await played(g.user.id, r.id, [
+      { videoId: 'kathang0000', title: 'Kathang Isip', catalogId: '201' },
+      { videoId: 'maybe000000', title: 'Maybe the Night', catalogId: '202' },
+    ]);
+    const at = Date.now();
+    await h.db.insert(queueItems).values([
+      {
+        roomId: r.id,
+        videoId: 'kathang0000',
+        addedBy: g.user.id,
+        position: 1,
+        status: 'played',
+        startedAt: new Date(at - 2000),
+      },
+      {
+        roomId: r.id,
+        videoId: 'maybe000000',
+        addedBy: g.user.id,
+        position: 2,
+        status: 'skipped',
+        startedAt: new Date(at - 1000),
+        endedAt: new Date(at),
+      },
+    ]);
+    const got = (await h.recommendations.forRoom(r.id)).map((s) => s.id);
+    expect(got).toEqual(['301', '401']);
+  });
+});
+
+describe('picks led by the last song', () => {
+  it("put Last.fm's similar songs to the last song first, and say which song", async () => {
+    const g = await h.guest();
+    const r = await room(g.user.id);
+    h.lastfmSimilar.set('cup of joe|multo', [{ title: 'Mahika', artist: 'Adie', match: 1 }]);
+    h.catalogSearch.set('adie mahika', ['401']);
+    await played(g.user.id, r.id, [
+      { videoId: 'kathang0000', title: 'Kathang Isip', channelTitle: 'Ben&Ben', catalogId: '201' },
+      { videoId: 'multo000000', title: 'Multo', channelTitle: 'Cup of Joe', catalogId: '101' },
+    ]);
+    const res = await recommendations(g);
+    expect(res.body.seed).toEqual({ title: 'Multo', artist: 'Cup of Joe' });
+    expect(ids(res)[0]).toBe('401');
+    expect(h.lastfmCalls).toContain('cup of joe|multo');
+
+    // Playing another song gives a new list, led by that one.
+    await played(g.user.id, r.id, [
+      { videoId: 'gusto000000', title: 'Gusto', channelTitle: 'Zack Tabudlo', catalogId: '301' },
+    ]);
+    expect((await recommendations(g)).body.seed).toEqual({
+      title: 'Gusto',
+      artist: 'Zack Tabudlo',
+    });
+  });
+
+  it('count what people in Spotibay chose right after the song, but not autoplay picks', async () => {
+    const g = await h.guest();
+    const track = (videoId: string, title: string, catalogId: string) =>
+      h.db
+        .insert(tracks)
+        .values({
+          videoId,
+          title,
+          channelTitle: 'Someone',
+          durationSec: 240,
+          thumbnailUrl: 'https://i.ytimg.com/x.jpg',
+          catalogId,
+        })
+        .onConflictDoNothing();
+    await track('bukod000000', 'Bukod-Tangi', '104');
+    await track('estrang0000', 'Estranghero', '103');
+    let at = Date.now() - 60_000;
+    async function session(next: string, source: 'user' | 'autoplay') {
+      const r = await room(g.user.id);
+      for (const [i, videoId] of ['kathang0000', next].entries()) {
+        await h.db.insert(queueItems).values({
+          roomId: r.id,
+          videoId,
+          addedBy: g.user.id,
+          position: i + 1,
+          status: 'played',
+          source: i === 0 ? 'user' : source,
+          startedAt: new Date((at += 1000)),
+        });
+      }
+    }
+    await played(g.user.id, (await room(g.user.id)).id, [
+      { videoId: 'kathang0000', title: 'Kathang Isip', catalogId: '201' },
+    ]);
+    await session('bukod000000', 'user');
+    await session('bukod000000', 'user');
+    await session('estrang0000', 'autoplay');
+    await session('estrang0000', 'autoplay');
+    await session('estrang0000', 'autoplay');
+
+    const other = await h.guest();
+    await played(other.user.id, (await room(other.user.id)).id, [
+      { videoId: 'kathang0000', title: 'Kathang Isip', catalogId: '201' },
+    ]);
+    const got = ids(await recommendations(other));
+    expect(got[0]).toBe('104');
+    expect(got).not.toContain('103');
   });
 });

@@ -38,7 +38,7 @@ import {
   createQuotaStore,
   createTrackStore,
 } from '../../src/services/queue-store.js';
-import { createLookupCharger, createYouTubeService } from '../../src/services/youtube.js';
+import { createYouTubeService } from '../../src/services/youtube.js';
 import { createPresence } from '../../src/services/presence.js';
 import { createRoomLifecycle } from '../../src/services/room-lifecycle.js';
 import { createRoomService } from '../../src/services/rooms.js';
@@ -48,8 +48,10 @@ import { createGifService } from '../../src/services/gifs.js';
 import { createLibraryService } from '../../src/services/library.js';
 import { createPlaylistService } from '../../src/services/playlists.js';
 import { createSearchService } from '../../src/services/search.js';
+import { createVibeService } from '../../src/services/vibes.js';
 import { createRecommendationService } from '../../src/services/recommendations.js';
 import { createMusicBrainzLinks, createOdesliLinks } from '../../src/services/song-links.js';
+import { createLastfmSimilar } from '../../src/services/similar.js';
 import { createMetrics } from '../../src/lib/metrics.js';
 import { createSettingsService } from '../../src/services/settings.js';
 import { createBanStore, createRoomStore, createUserStore } from '../../src/services/user-store.js';
@@ -190,6 +192,9 @@ export async function createHarness(options: HarnessOptions = {}) {
   const appleCharts = new Map<string, FakeChartEntry[]>();
   const appleChartCalls: string[] = [];
   const deezerChart: string[] = [];
+  /** Fake Deezer playlists: id -> song ids (unknown ids answer "not found"); and playlist search. */
+  const deezerPlaylists = new Map<string, string[]>();
+  const deezerPlaylistSearch = new Map<string, { id: number; user: { name: string } }[]>();
   /** Fake Deezer artist radios: artist id -> song ids; unknown artists answer "not found". */
   const artistRadios = new Map<string, string[]>();
   /** Set to make Deezer answer with this error code (status 200, like the real one). */
@@ -246,6 +251,9 @@ export async function createHarness(options: HarnessOptions = {}) {
     const data = [{ type: 'ad', content: '<div></div>', width: 300, height: 250 }, ...items];
     return Response.json({ result: true, data: { data, current_page: 1, has_next: false } });
   };
+  /** Fake Last.fm: "artist|title" (lowercase) -> similar songs; unknown songs answer "not found". */
+  const lastfmSimilar = new Map<string, { title: string; artist: string; match: number }[]>();
+  const lastfmCalls: string[] = [];
   const fakeFetch = (async (input: URL | string) => {
     const url = new URL(input);
     if (url.hostname === 'api.klipy.com') return klipyAnswer(url);
@@ -255,6 +263,18 @@ export async function createHarness(options: HarnessOptions = {}) {
       const entries = appleCharts.get(country);
       if (!entries) return new Response('Not Found', { status: 404 });
       return Response.json({ feed: { country, results: entries } });
+    }
+    if (url.hostname === 'ws.audioscrobbler.com') {
+      const asked =
+        `${url.searchParams.get('artist')}|${url.searchParams.get('track')}`.toLowerCase();
+      lastfmCalls.push(asked);
+      const found = lastfmSimilar.get(asked);
+      if (!found) return Response.json({ error: 6, message: 'Track not found' });
+      return Response.json({
+        similartracks: {
+          track: found.map((s) => ({ name: s.title, match: s.match, artist: { name: s.artist } })),
+        },
+      });
     }
     if (url.hostname === 'musicbrainz.org') {
       const isrc = url.pathname.split('/').pop() ?? '';
@@ -293,6 +313,22 @@ export async function createHarness(options: HarnessOptions = {}) {
             const song = catalogSongs.get(id);
             return song ? [deezerTrack(id, song)] : [];
           }),
+        });
+      }
+      const playlist = /^\/playlist\/(\d+)\/tracks$/.exec(url.pathname);
+      if (playlist) {
+        const ids = deezerPlaylists.get(playlist[1]!);
+        if (!ids) return Response.json({ error: { code: 800 } });
+        return Response.json({
+          data: ids.flatMap((id) => {
+            const song = catalogSongs.get(id);
+            return song ? [deezerTrack(id, song)] : [];
+          }),
+        });
+      }
+      if (url.pathname === '/search/playlist') {
+        return Response.json({
+          data: deezerPlaylistSearch.get(url.searchParams.get('q') ?? '') ?? [],
         });
       }
       const radio = /^\/artist\/(\d+)\/radio$/.exec(url.pathname);
@@ -364,19 +400,17 @@ export async function createHarness(options: HarnessOptions = {}) {
     apiKey: 'test-key',
     tracks: createTrackStore(db),
     quota: quotaStore,
-    chargeLookup: createLookupCharger(redis, () =>
-      settings.get('limits.videoLookupsPerUserPerDay'),
-    ),
     region: () => settings.get('search.region'),
     fetch: fakeFetch,
   });
+  const catalogMatches = createCatalogMatchStore(db);
   const search = createSearchService({
     redis,
     settings,
     quota: quotaStore,
     youtube,
     catalog,
-    matches: createCatalogMatchStore(db),
+    matches: catalogMatches,
     songLinks: [
       createOdesliLinks({ redis, apiKey: 'odesli-key', fetch: fakeFetch }),
       createMusicBrainzLinks({
@@ -388,7 +422,14 @@ export async function createHarness(options: HarnessOptions = {}) {
     ],
     metrics,
   });
-  const recommendations = createRecommendationService({ db, redis, catalog, settings });
+  const recommendations = createRecommendationService({
+    db,
+    redis,
+    catalog,
+    settings,
+    similar: createLastfmSimilar({ redis, apiKey: 'test-lastfm-key', fetch: fakeFetch }),
+  });
+  const vibes = createVibeService({ db, catalog, matches: catalogMatches, settings });
   const playback = createPlaybackService({
     store: playbackStore,
     queue: createQueueStore(db),
@@ -404,6 +445,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     recommendations,
     matcher: search,
     settings,
+    metrics,
   });
   const gifs = createGifService({ redis, settings, apiKey: KLIPY_TEST_KEY, fetch: fakeFetch });
   const chat = createChatService({
@@ -447,6 +489,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     playback,
     search,
     recommendations,
+    vibes,
     gifs,
     playlists,
     library,
@@ -583,6 +626,10 @@ export async function createHarness(options: HarnessOptions = {}) {
     appleCharts,
     appleChartCalls,
     deezerChart,
+    lastfmSimilar,
+    lastfmCalls,
+    deezerPlaylists,
+    deezerPlaylistSearch,
     artistRadios,
     recommendations,
     autoplay,

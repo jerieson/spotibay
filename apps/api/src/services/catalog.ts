@@ -16,7 +16,7 @@ const CHART_SIZE = 20;
 const CHART_TTL_SEC = 6 * 60 * 60;
 /** A chart cut short (Deezer busy) is retried sooner. */
 const PARTIAL_CHART_TTL_SEC = 10 * 60;
-/** Which Deezer song an Apple chart entry is; neither changes. */
+/** Which Deezer song an Apple chart entry (or a song named elsewhere) is; neither changes. */
 const CHART_ENTRY_TTL_SEC = 30 * 24 * 60 * 60;
 const APPLE_CHART = 'https://rss.marketingtools.apple.com/api/v2';
 /**
@@ -33,6 +33,12 @@ const RADIO_SIZE = 25;
 const RADIO_TTL_SEC = 24 * 60 * 60;
 /** Which Deezer song a YouTube upload is; looked up once by title. */
 const FOR_VIDEO_TTL_SEC = 30 * 24 * 60 * 60;
+/** A playlist's songs (vibes are built from editors' playlists), refreshed daily. */
+const PLAYLIST_SIZE = 100;
+const PLAYLIST_TTL_SEC = 24 * 60 * 60;
+/** Which editors' playlists match a search; taken when a pinned playlist is gone. */
+const EDITORIAL_PLAYLISTS = 3;
+const EDITORIAL_TTL_SEC = 7 * 24 * 60 * 60;
 /** How much longer than the song its music video may run and still be taken for it. */
 const MV_STRETCH = 1.35;
 
@@ -84,6 +90,12 @@ export const radioSongSchema = z.object({
 });
 export type RadioSong = z.infer<typeof radioSongSchema>;
 const cachedRadioSchema = z.array(radioSongSchema);
+
+const editorialSearchSchema = z.object({
+  data: z
+    .array(z.object({ id: z.number().int().nonnegative(), user: z.object({ name: z.string() }) }))
+    .default([]),
+});
 
 const appleChartSchema = z.object({
   feed: z.object({
@@ -341,21 +353,28 @@ export function createCatalogService({
     }
   }
 
-  /** The Deezer song an Apple chart entry is, from a cached answer or one Deezer search. */
-  async function chartEntry(entry: { id: string; name: string; artistName: string }) {
-    const key = `catalog:apple:${entry.id}`;
+  /**
+   * The Deezer song with this title by this artist (as another service names it), from a cached
+   * answer under `key` or one Deezer search. `null` when none is confidently it.
+   */
+  async function lookupByName(
+    key: string,
+    title: string,
+    artistName: string,
+  ): Promise<CatalogTrack | null> {
     const cachedId = await redis.get(key);
     if (cachedId !== null) {
       return cachedId ? getTrack(cachedId).catch(() => null) : null;
     }
-    const artist = firstArtist(entry.artistName);
+    const artist = firstArtist(artistName);
     const found = playable(
-      await call('/search/track', { q: `${words(artist)} ${coreTitle(entry.name)}`, limit: '5' }),
+      await call('/search/track', { q: `${words(artist)} ${coreTitle(title)}`, limit: '5' }),
     );
     await rememberDetails(found);
     const match = found.find(
       (t) =>
-        coreTitle(t.title) === coreTitle(entry.name) &&
+        coreTitle(t.title) === coreTitle(title) &&
+        !isImitation(t, '') &&
         (compact(t.artist.name).includes(compact(artist)) ||
           compact(artist).includes(compact(t.artist.name))),
     );
@@ -365,6 +384,52 @@ export function createCatalogService({
     await remember([song]);
     return song;
   }
+
+  /** A Deezer playlist's playable songs in order, imitations left out. Refreshed daily. */
+  async function playlistTracks(playlistId: string): Promise<CatalogTrack[]> {
+    const key = `catalog:playlist:${playlistId}`;
+    const cached = await redis.get(key);
+    if (cached) {
+      try {
+        return cachedSuggestionsSchema.parse(JSON.parse(cached));
+      } catch {
+        // Unreadable: ask Deezer again.
+      }
+    }
+    const found = playable(
+      await call(`/playlist/${playlistId}/tracks`, { limit: String(PLAYLIST_SIZE) }),
+    ).filter((t) => !isImitation(t, ''));
+    const songs = found.map(toCatalogTrack);
+    await redis.set(key, JSON.stringify(songs), 'EX', PLAYLIST_TTL_SEC);
+    await remember(songs);
+    await rememberDetails(found);
+    return songs;
+  }
+
+  /** Ids of playlists Deezer's own editors made that match `query`, best first. */
+  async function editorialPlaylists(query: string): Promise<string[]> {
+    const key = `catalog:editorial:${words(query)}`;
+    const cached = await redis.get(key);
+    if (cached !== null) return cached ? cached.split(',') : [];
+    const parsed = editorialSearchSchema.safeParse(
+      await call('/search/playlist', { q: query, limit: '25' }),
+    );
+    if (!parsed.success) throw new CatalogError('unavailable', 'Unexpected Deezer response');
+    const ids = parsed.data.data
+      .filter((p) => /\bdeezer\b/i.test(p.user.name) && /\beditor\b/i.test(p.user.name))
+      .slice(0, EDITORIAL_PLAYLISTS)
+      .map((p) => String(p.id));
+    await redis.set(key, ids.join(','), 'EX', EDITORIAL_TTL_SEC);
+    return ids;
+  }
+
+  /** The Deezer song an Apple chart entry is. */
+  const chartEntry = (entry: { id: string; name: string; artistName: string }) =>
+    lookupByName(`catalog:apple:${entry.id}`, entry.name, entry.artistName);
+
+  /** The Deezer song with this title and artist (a Last.fm suggestion, say); looked up once. */
+  const findByName = (title: string, artist: string) =>
+    lookupByName(`catalog:byname:${compact(artist)}:${coreTitle(title)}`, title, artist);
 
   /**
    * Apple Music's most played songs in the country, found on Deezer one by one (each lookup is
@@ -435,7 +500,18 @@ export function createCatalogService({
     return building;
   }
 
-  return { search, getTrack, isrc, artistOf, artistRadio, findForVideo, topCharts };
+  return {
+    search,
+    getTrack,
+    isrc,
+    artistOf,
+    artistRadio,
+    findForVideo,
+    findByName,
+    playlistTracks,
+    editorialPlaylists,
+    topCharts,
+  };
 }
 
 export type CatalogService = ReturnType<typeof createCatalogService>;

@@ -265,7 +265,7 @@ export function AddMusicSheet({
             <SongSection
               title="For you"
               songs={forYou.data.suggestions}
-              note="Picked from what you've played. Song info from Deezer."
+              note={`${forYou.data.seed ? `Because you played ${forYou.data.seed.title} by ${forYou.data.seed.artist}.` : "Picked from what you've played."} Song info from Deezer.`}
               added={added}
               resolving={resolve.isPending ? (resolve.variables?.id ?? null) : null}
               onAdd={(song) => resolve.mutate(song)}

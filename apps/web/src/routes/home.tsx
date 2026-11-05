@@ -1,14 +1,31 @@
-import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Users } from 'lucide-react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import {
+  ArrowRight,
+  CloudRain,
+  Coffee,
+  Disc3,
+  Flame,
+  Headphones,
+  Users,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { roomCodeSchema, type CatalogTrack } from '@spotibay/shared';
+import {
+  roomCodeSchema,
+  VIBES,
+  vibeIdSchema,
+  type CatalogTrack,
+  type VibeId,
+} from '@spotibay/shared';
 import { CreateRoomDialog } from '@/components/room/create-room-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { useSession } from '@/hooks/use-session';
-import { fetchRecommendations, fetchRooms, RECOMMENDATIONS_STALE_MS } from '@/lib/api';
+import { fetchRecommendations, fetchRooms, fetchVibe, RECOMMENDATIONS_STALE_MS } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 export function HomePage() {
   return (
@@ -31,6 +48,7 @@ export function HomePage() {
           <JoinByCode />
         </div>
       </section>
+      <Vibes />
       <ForYou />
       <PublicRooms />
     </div>
@@ -72,7 +90,116 @@ function JoinByCode() {
   );
 }
 
-/** Songs picked from what you played (the top chart until then); tapping one starts a room. */
+const VIBE_KEY = 'home:vibe';
+/** Cached on the server for the day, so a short stale time only saves a refetch. */
+const VIBE_STALE_MS = 10 * 60 * 1000;
+
+/** How each vibe looks: an icon and a soft colour wash behind it. */
+const vibeLooks: Record<VibeId, { icon: LucideIcon; wash: string; iconColor: string }> = {
+  'work-mode': { icon: Zap, wash: 'bg-amber-400/25', iconColor: 'text-amber-500' },
+  chillero: { icon: Coffee, wash: 'bg-teal-400/25', iconColor: 'text-teal-500' },
+  'ultimate-relapse': { icon: CloudRain, wash: 'bg-sky-400/25', iconColor: 'text-sky-500' },
+  trending: { icon: Flame, wash: 'bg-volt/25', iconColor: 'text-volt-text' },
+  throwback: { icon: Disc3, wash: 'bg-fuchsia-400/25', iconColor: 'text-fuchsia-500' },
+  focus: { icon: Headphones, wash: 'bg-violet-400/25', iconColor: 'text-violet-500' },
+};
+
+function storedVibe(): VibeId {
+  try {
+    const parsed = vibeIdSchema.safeParse(localStorage.getItem(VIBE_KEY));
+    if (parsed.success) return parsed.data;
+  } catch {
+    // Storage blocked: start from the first vibe.
+  }
+  return VIBES[0]!.id;
+}
+
+/** Moods and genres to start from; the picked one's songs show below, and tapping one starts a room. */
+function Vibes() {
+  const session = useSession();
+  const [vibeId, setVibeId] = useState<VibeId>(storedVibe);
+  const songs = useQuery({
+    queryKey: ['vibe', vibeId],
+    queryFn: () => fetchVibe(vibeId),
+    enabled: session.isSuccess,
+    staleTime: VIBE_STALE_MS,
+    retry: false,
+    placeholderData: keepPreviousData,
+  });
+  const vibe = VIBES.find((v) => v.id === vibeId)!;
+
+  function pick(id: VibeId) {
+    setVibeId(id);
+    try {
+      localStorage.setItem(VIBE_KEY, id);
+    } catch {
+      // Not remembered; it still works for this visit.
+    }
+  }
+
+  return (
+    <section className="space-y-4" aria-labelledby="vibes-title">
+      <div>
+        <h2 id="vibes-title" className="font-display text-xl font-bold">
+          What&apos;s the vibe?
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Pick a mood, then tap a song to start a room with it.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {VIBES.map((v) => {
+          const look = vibeLooks[v.id];
+          const Icon = look.icon;
+          const selected = v.id === vibeId;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => pick(v.id)}
+              className={cn(
+                'relative overflow-hidden rounded-2xl border bg-card p-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                selected ? 'border-volt ring-1 ring-volt' : 'hover:border-volt/60',
+              )}
+            >
+              <span
+                className={cn(
+                  'pointer-events-none absolute -top-8 -right-8 size-24 rounded-full blur-2xl',
+                  look.wash,
+                )}
+              />
+              <Icon className={cn('relative size-6', look.iconColor)} aria-hidden />
+              <span className="relative mt-3 block font-display font-bold leading-tight">
+                {v.name}
+              </span>
+              <span className="relative mt-0.5 block text-xs text-muted-foreground">
+                {v.tagline}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {songs.isPending && session.isSuccess && (
+        <p className="text-sm text-muted-foreground">Loading songs…</p>
+      )}
+      {songs.isError && (
+        <p className="text-sm text-muted-foreground">
+          Couldn&apos;t load songs for {vibe.name} right now. Try again in a moment.
+        </p>
+      )}
+      {songs.data && songs.data.suggestions.length > 0 && (
+        <SongRow
+          songs={songs.data.suggestions}
+          label={vibe.name}
+          dimmed={songs.isPlaceholderData}
+        />
+      )}
+    </section>
+  );
+}
+
+/** Songs that go with the last one you played; hidden until you've played something. */
 function ForYou() {
   const session = useSession();
   const recs = useQuery({
@@ -82,26 +209,50 @@ function ForYou() {
     staleTime: RECOMMENDATIONS_STALE_MS,
     retry: false,
   });
-  const [song, setSong] = useState<CatalogTrack | null>(null);
 
-  if (!recs.data || recs.data.suggestions.length === 0) return null;
-  const fromHistory = recs.data.basedOn === 'history';
+  // Before there's any history the list is just the chart, which the Trending vibe already shows.
+  if (recs.data?.basedOn !== 'history' || recs.data.suggestions.length === 0) return null;
+  const { seed } = recs.data;
 
   return (
     <section className="space-y-3" aria-labelledby="for-you-title">
       <div>
         <h2 id="for-you-title" className="font-display text-xl font-bold">
-          {fromHistory ? 'For you' : 'Popular right now'}
+          For you
         </h2>
         <p className="text-sm text-muted-foreground">
-          {fromHistory
-            ? "Picked from what you've played. Tap one to start a room with it."
-            : 'Play a few songs and these become picks for you. Tap one to start a room with it.'}
+          {seed
+            ? `Because you played ${seed.title} by ${seed.artist}. Tap one to start a room with it.`
+            : "Picked from what you've played. Tap one to start a room with it."}
         </p>
       </div>
-      <ScrollArea type="auto" className="-mx-1 [&>[data-slot=scroll-area-viewport]]:snap-x">
-        <ul className="flex w-max gap-3 px-1 pb-3">
-          {recs.data.suggestions.map((s) => (
+      <SongRow songs={recs.data.suggestions} label="For you" />
+    </section>
+  );
+}
+
+/** A row of songs to scroll through; tapping one opens room creation with it. */
+function SongRow({
+  songs,
+  label,
+  dimmed = false,
+}: {
+  songs: CatalogTrack[];
+  label: string;
+  dimmed?: boolean;
+}) {
+  const [song, setSong] = useState<CatalogTrack | null>(null);
+  return (
+    <>
+      <ScrollArea
+        type="auto"
+        className={cn(
+          '-mx-1 transition-opacity [&>[data-slot=scroll-area-viewport]]:snap-x',
+          dimmed && 'opacity-60',
+        )}
+      >
+        <ul className="flex w-max gap-3 px-1 pb-3" aria-label={label}>
+          {songs.map((s) => (
             <li key={s.id} className="w-32 shrink-0 snap-start sm:w-36">
               <button
                 type="button"
@@ -134,7 +285,7 @@ function ForYou() {
           if (!open) setSong(null);
         }}
       />
-    </section>
+    </>
   );
 }
 

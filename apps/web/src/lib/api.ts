@@ -19,6 +19,7 @@ import {
   searchResponseSchema,
   sessionResponseSchema,
   suggestResponseSchema,
+  vibeResponseSchema,
   type CatalogTrack,
   type ChartsResponse,
   type RecommendationsResponse,
@@ -35,6 +36,8 @@ import {
   type Track,
   type UpdatePlaylistBody,
   type ResolveResponse,
+  type VibeId,
+  type VibeResponse,
   type RoomSummary,
   type SearchResponse,
   type SessionResponse,
@@ -136,6 +139,11 @@ export const RECOMMENDATIONS_STALE_MS = 10 * 60 * 1000;
 /** Songs picked from what you played, or the top chart before you've played anything. */
 export function fetchRecommendations(): Promise<RecommendationsResponse> {
   return request(recommendationsResponseSchema, '/api/recommendations');
+}
+
+/** Songs for a mood or genre; the server mixes them afresh each day. */
+export function fetchVibe(id: VibeId): Promise<VibeResponse> {
+  return request(vibeResponseSchema, `/api/vibes/${id}`);
 }
 
 export function resolveTrack(catalogId: string): Promise<ResolveResponse> {

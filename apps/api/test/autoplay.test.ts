@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { QueueItem, Room, RoomResponse } from '@spotibay/shared';
-import { queueItems, tracks } from '../src/db/schema.js';
+import { catalogMatches, queueItems, tracks } from '../src/db/schema.js';
 import { createHarness, joinRoom, next, sleep, type Harness } from './helpers/harness.js';
 
 let h: Harness;
@@ -22,12 +22,18 @@ const OTHER = 'othersong00';
 beforeEach(async () => {
   await h.redis.flushdb();
   await h.db.execute('truncate table tracks, rooms, api_quota_usage cascade');
-  for (const m of [h.catalogSongs, h.artistRadios, h.songLinks, h.videos]) m.clear();
+  for (const m of [h.catalogSongs, h.artistRadios, h.songLinks, h.videos, h.searchResults]) {
+    m.clear();
+  }
+  h.deezerChart.length = 0;
   h.searchCalls.length = 0;
   h.songLinkCalls.length = 0;
   await h.settings.set('features.catalogSearch', true, null);
   await h.settings.set('features.autoplay', true, null);
   await h.settings.set('limits.maxQueueItemsPerUser', 5, null);
+  // Most tests check the free ways; the ones about searching turn it on.
+  await h.settings.set('search.autoplaySearchesPerDay', 0, null);
+  await h.settings.set('search.dailySearchCallBudget', 95, null);
 
   const song = (id: string, title: string) =>
     h.catalogSongs.set(id, { title, artist: 'Ben&Ben', artistId: BENBEN, durationSec: 240 });
@@ -160,6 +166,65 @@ describe('autoplay', () => {
     await sleep(100);
     await h.autoplay.fill(setup.roomId);
     expect((await h.playback.snapshot(setup.roomId)).queue).toEqual([]);
+    expect(h.searchCalls).toEqual([]);
+  });
+
+  it('takes a song someone already matched before asking the link sources', async () => {
+    await h.db.insert(tracks).values({
+      videoId: MAHIKA,
+      title: 'Mahika',
+      channelTitle: 'Ben&Ben',
+      durationSec: 240,
+      thumbnailUrl: 'https://i.ytimg.com/x.jpg',
+    });
+    // 203 has no link, but someone matched it before, so it's free and goes first.
+    await h.db.insert(catalogMatches).values({ catalogId: '203', videoId: MAHIKA });
+    const setup = await setupRoom();
+    await setAutoplay(setup, true);
+    const queued = next(setup.socket, 'queue:updated', (q) => q.queue.length > 0);
+    setup.socket.emit('queue:add', { url: `https://youtu.be/${KATHANG}` });
+    expect(ids((await queued).queue)).toEqual([MAHIKA]);
+    expect(h.songLinkCalls).toEqual([]);
+    expect(h.searchCalls).toEqual([]);
+  });
+
+  it('spends a search when nothing free is found, and remembers the match', async () => {
+    h.songLinks.clear();
+    await h.settings.set('search.autoplaySearchesPerDay', 5, null);
+    h.searchResults.set('ben&ben maybe the night', [OTHER, MAYBE]);
+    const setup = await setupRoom();
+    await setAutoplay(setup, true);
+    const queued = next(setup.socket, 'queue:updated', (q) => q.queue.length > 0);
+    setup.socket.emit('queue:add', { url: `https://youtu.be/${KATHANG}` });
+    expect(ids((await queued).queue)).toEqual([MAYBE]);
+    expect(h.searchCalls).toEqual(['ben&ben maybe the night']);
+    const [match] = await h.db.select().from(catalogMatches);
+    expect(match).toMatchObject({ catalogId: '202', videoId: MAYBE });
+  });
+
+  it('stops searching at the daily autoplay cap', async () => {
+    h.songLinks.clear();
+    await h.settings.set('search.autoplaySearchesPerDay', 1, null);
+    const setup = await setupRoom();
+    await setAutoplay(setup, true);
+    const started = next(setup.socket, 'playback:state', (s) => s.item?.track.videoId === KATHANG);
+    setup.socket.emit('queue:add', { url: `https://youtu.be/${KATHANG}` });
+    await started;
+    await sleep(100);
+    await h.autoplay.fill(setup.roomId);
+    // The first search found no match; the second song was refused by the cap.
+    expect(h.searchCalls).toEqual(['ben&ben maybe the night']);
+    expect((await h.playback.snapshot(setup.roomId)).queue).toEqual([]);
+  });
+
+  it("falls back to the host's suggestions when the room's songs give nothing", async () => {
+    // The room only played a video the catalog doesn't know, so it has no taste yet.
+    h.deezerChart.push('204');
+    const setup = await setupRoom();
+    await setAutoplay(setup, true);
+    const queued = next(setup.socket, 'queue:updated', (q) => q.queue.length > 0);
+    setup.socket.emit('queue:add', { url: `https://youtu.be/${OTHER}` });
+    expect(ids((await queued).queue)).toEqual([GUSTO]);
     expect(h.searchCalls).toEqual([]);
   });
 });

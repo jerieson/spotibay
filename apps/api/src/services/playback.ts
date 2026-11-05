@@ -241,12 +241,11 @@ export function createPlaybackService({
     return { playback, queue: items, skipVotes };
   }
 
-  async function fetchTracks(videoIds: string[], userId: string) {
+  async function fetchTracks(videoIds: string[]) {
     try {
-      return await youtube.getVideos(videoIds, userId);
+      return await youtube.getVideos(videoIds);
     } catch (err) {
       if (err instanceof YouTubeError) {
-        if (err.code === 'user_limit') throw new PlaybackError('rate_limited', err.message);
         throw new PlaybackError('youtube_unavailable', youtubeFailureMessage(err));
       }
       throw err;
@@ -257,7 +256,7 @@ export function createPlaybackService({
     const videoId = parseVideoId(input);
     if (!videoId) throw new PlaybackError('invalid_video', 'That is not a YouTube link');
 
-    const track = (await fetchTracks([videoId], userId)).get(videoId);
+    const track = (await fetchTracks([videoId])).get(videoId);
     if (!track) throw new PlaybackError('invalid_video', 'That video was not found');
     if (!track.embeddable) {
       throw new PlaybackError('track_rejected', 'That video cannot be played outside YouTube');
@@ -422,7 +421,7 @@ export function createPlaybackService({
     videoIds: string[],
   ): Promise<AddManyResult> {
     const wanted = [...new Set(videoIds)];
-    const found = await fetchTracks(wanted, userId);
+    const found = await fetchTracks(wanted);
     const failedHere = await store.unplayable(roomId, wanted);
     const result: AddManyResult = { added: 0, duplicates: 0, unplayable: 0, overLimit: 0 };
     return withLock(roomId, async () => {

@@ -265,9 +265,17 @@ export function createAdminService({
       const row = rows.get(date);
       return { date, units: row?.units ?? 0, searchCalls: row?.searchCalls ?? 0 };
     });
+    const counts = await metrics?.get(today);
+    const all = settings.all();
     return {
       today: days.at(-1)!,
-      searchCallBudget: settings.all()['search.dailySearchCallBudget'],
+      searchCallBudget: all['search.dailySearchCallBudget'],
+      autoplay: {
+        searches: Math.max(0, counts?.search_autoplay ?? 0),
+        searchCap: all['search.autoplaySearchesPerDay'],
+        queued: counts?.autoplay_queued ?? 0,
+        stalled: counts?.autoplay_none ?? 0,
+      },
       days,
     };
   }

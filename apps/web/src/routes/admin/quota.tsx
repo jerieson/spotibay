@@ -1,6 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { Progress } from '@/components/ui/progress';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { ChartCard, DAILY_QUOTA_UNITS, TrendChart, formatDay } from './charts';
 import { Card, PageHeader, QueryState } from './ui';
 import { adminApi } from './admin-api';
@@ -15,7 +22,7 @@ export function QuotaPage() {
       <QueryState isPending={quota.isPending} error={quota.error} />
       {q && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Meter
               label="Search calls today"
               value={q.today.searchCalls}
@@ -27,6 +34,13 @@ export function QuotaPage() {
               value={q.today.units}
               limit={DAILY_QUOTA_UNITS}
               unit="units"
+            />
+            <Meter
+              label="Autoplay searches today"
+              value={q.autoplay.searches}
+              limit={q.autoplay.searchCap}
+              unit="calls"
+              note={`Autoplay queued ${q.autoplay.queued.toLocaleString()} ${q.autoplay.queued === 1 ? 'song' : 'songs'} today and found nothing ${q.autoplay.stalled.toLocaleString()} ${q.autoplay.stalled === 1 ? 'time' : 'times'}.`}
             />
           </div>
           <ChartCard
@@ -70,11 +84,13 @@ function Meter({
   value,
   limit,
   unit,
+  note,
 }: {
   label: string;
   value: number;
   limit: number;
   unit: string;
+  note?: string;
 }) {
   const pct = limit > 0 ? Math.min(100, (value / limit) * 100) : 100;
   return (
@@ -93,6 +109,7 @@ function Meter({
         indicatorClassName={pct >= 90 ? 'bg-destructive' : 'bg-chart-1'}
       />
       {pct >= 90 && <p className="mt-1 text-sm text-destructive">Almost used up for today.</p>}
+      {note && <p className="mt-1 text-sm text-muted-foreground">{note}</p>}
     </Card>
   );
 }

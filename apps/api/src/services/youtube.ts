@@ -23,7 +23,8 @@ const TRACK_TTL_MS = 24 * 60 * 60 * 1000;
 /** Ids YouTube didn't know are not asked about again for this long, so repeats cost no quota. */
 const MISSING_TTL_MS = 60 * 60 * 1000;
 const MISSING_MAX_ENTRIES = 10_000;
-const LOOKUP_COUNT_TTL_SEC = 2 * 24 * 60 * 60;
+/** How long a spent-quota flag lives; it is per date, so this only needs to outlast the day. */
+const QUOTA_FLAG_TTL_SEC = 2 * 24 * 60 * 60;
 
 export interface StoredTrack extends Track {
   embeddable: boolean;
@@ -47,7 +48,6 @@ export type YouTubeErrorCode =
   | 'not_configured'
   | 'api_error'
   | 'not_found'
-  | 'user_limit'
   /** The project's daily quota is spent; calls start working again at Pacific midnight. */
   | 'quota_exceeded';
 
@@ -150,26 +150,6 @@ const searchResponseSchema = z.object({
   items: z.array(z.object({ id: z.object({ videoId: z.string().optional() }) })).default([]),
 });
 
-/** Spends one quota-costing lookup for a person; resolves `false` once they are over today's cap. */
-export type LookupCharger = (userId: string) => Promise<boolean>;
-
-/** Per-person daily lookup cap in Redis (`ytlookups:{userId}:{date}`, Pacific Time like the quota). */
-export function createLookupCharger(
-  redis: Redis,
-  perUserPerDay: () => number,
-  now: () => Date = () => new Date(),
-): LookupCharger {
-  return async (userId) => {
-    const key = `ytlookups:${userId}:${quotaDate(now())}`;
-    const results = await redis.multi().incr(key).expire(key, LOOKUP_COUNT_TTL_SEC).exec();
-    const [err, used] = results?.[0] ?? [new Error('lookup count transaction aborted'), 0];
-    if (err) throw err;
-    if (Number(used) <= perUserPerDay()) return true;
-    await redis.decr(key);
-    return false;
-  };
-}
-
 /** Remembers that YouTube refused for quota today, so later calls don't ask again until it resets. */
 export interface QuotaFlag {
   isSet(date: string): Promise<boolean>;
@@ -181,7 +161,7 @@ export function createQuotaFlag(redis: Redis): QuotaFlag {
   const key = (date: string) => `yt:exhausted:${date}`;
   return {
     isSet: async (date) => (await redis.exists(key(date))) === 1,
-    set: async (date) => void (await redis.set(key(date), '1', 'EX', LOOKUP_COUNT_TTL_SEC)),
+    set: async (date) => void (await redis.set(key(date), '1', 'EX', QUOTA_FLAG_TTL_SEC)),
   };
 }
 
@@ -189,8 +169,6 @@ export interface YouTubeServiceDeps {
   apiKey: string | undefined;
   tracks: TrackStore;
   quota: QuotaStore;
-  /** Caps the lookups one person can trigger; uncapped when omitted. */
-  chargeLookup?: LookupCharger;
   /** Without one, a spent quota is only noticed when YouTube refuses each call. */
   quotaFlag?: QuotaFlag;
   /** Two-letter country whose results searches favour; empty for none. */
@@ -203,7 +181,6 @@ export function createYouTubeService({
   apiKey,
   tracks,
   quota,
-  chargeLookup,
   quotaFlag,
   region = () => '',
   fetch: fetchImpl = fetch,
@@ -253,17 +230,8 @@ export function createYouTubeService({
     return new YouTubeError('api_error', `YouTube API returned ${res.status}`);
   }
 
-  /** Charges a lookup to `userId` (if given), refusing once they are over their cap. */
-  async function charge(userId: string | undefined) {
-    if (!chargeLookup || userId === undefined) return;
-    if (!(await chargeLookup(userId))) {
-      throw new YouTubeError('user_limit', "You've looked up too many new videos today");
-    }
-  }
-
-  async function fetchVideos(ids: string[], userId: string | undefined): Promise<StoredTrack[]> {
+  async function fetchVideos(ids: string[]): Promise<StoredTrack[]> {
     await ready();
-    await charge(userId);
     const url = new URL(VIDEOS_ENDPOINT);
     url.searchParams.set('part', 'snippet,contentDetails,status');
     url.searchParams.set('id', ids.join(','));
@@ -292,10 +260,10 @@ export function createYouTubeService({
 
   /**
    * Details for the given videos, from the track table when fresh, else from `videos.list`.
-   * Unknown ids are absent. Calls YouTube makes for `userId` count toward their daily cap.
+   * Unknown ids are absent.
    * Once the quota is spent, older stored details are used rather than failing.
    */
-  async function getVideos(videoIds: string[], userId?: string): Promise<Map<string, StoredTrack>> {
+  async function getVideos(videoIds: string[]): Promise<Map<string, StoredTrack>> {
     const ids = [...new Set(videoIds)].filter((id) => VIDEO_ID_PATTERN.test(id));
     const result = new Map<string, StoredTrack>();
     const stale = new Map<string, StoredTrack>();
@@ -308,7 +276,7 @@ export function createYouTubeService({
     try {
       for (let i = 0; i < toFetch.length; i += VIDEOS_BATCH) {
         const batch = toFetch.slice(i, i + VIDEOS_BATCH);
-        const stored = await tracks.upsertMany(await fetchVideos(batch, userId));
+        const stored = await tracks.upsertMany(await fetchVideos(batch));
         for (const track of stored) result.set(track.videoId, track);
         rememberMissing(batch.filter((id) => !result.has(id)));
       }
@@ -346,12 +314,8 @@ export function createYouTubeService({
     });
   }
 
-  /** Video ids of a public YouTube playlist in order, at most `max` of them (one call per 50, charged to `userId`). */
-  async function getPlaylistVideoIds(
-    playlistId: string,
-    max: number,
-    userId?: string,
-  ): Promise<string[]> {
+  /** Video ids of a public YouTube playlist in order, at most `max` of them (one call per 50). */
+  async function getPlaylistVideoIds(playlistId: string, max: number): Promise<string[]> {
     await ready();
     const ids: string[] = [];
     let pageToken: string | undefined;
@@ -362,7 +326,6 @@ export function createYouTubeService({
       url.searchParams.set('maxResults', String(PLAYLIST_PAGE_SIZE));
       url.searchParams.set('key', apiKey!);
       if (pageToken) url.searchParams.set('pageToken', pageToken);
-      await charge(userId);
       const res = await fetchImpl(url);
       await quota.add(quotaDate(now()), PLAYLIST_ITEMS_COST, 0);
       if (!res.ok) {

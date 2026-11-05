@@ -34,8 +34,6 @@ export const settingDescriptions: Record<SettingKey, string> = {
     'YouTube searches one person can run per minute. Cached searches and songs someone already added are free.',
   'limits.suggestionsPerMinute': 'Song suggestion requests one address can make per minute.',
   'limits.gifSearchesPerMinute': 'GIF and sticker searches one person can run per minute.',
-  'limits.videoLookupsPerUserPerDay':
-    'YouTube lookups of videos new to the app one person can cause per day. Each covers up to 50 videos and costs 1 quota unit.',
   'limits.maxPlaylistImportItems': 'Most tracks imported from one YouTube playlist.',
   'limits.chatMessageMaxLength': 'Longest chat message, in characters.',
   'limits.chatMessagesPerMinute': 'Chat messages one person can send per minute.',
@@ -51,6 +49,8 @@ export const settingDescriptions: Record<SettingKey, string> = {
   'search.cacheTtlSec': 'How long search results are cached, in seconds.',
   'search.dailySearchCallBudget':
     'YouTube search calls allowed per day. Each costs 100 quota units of the 10,000 default.',
+  'search.autoplaySearchesPerDay':
+    'Of the daily searches, how many autoplay may spend finding a video for a suggested song nobody has matched yet. 0: autoplay only uses free matches.',
   'search.region':
     'Country for the "Top songs" chart and for YouTube search results, as a two-letter code like PH. Empty: worldwide.',
   'catalog.cacheTtlSec': 'How long song suggestions are cached, in seconds.',
@@ -210,6 +210,13 @@ export const quotaDaySchema = z.object({
 export const adminQuotaResponseSchema = z.object({
   today: quotaDaySchema,
   searchCallBudget: z.number().int().nonnegative(),
+  /** Autoplay today: searches it spent (within its own cap), songs it queued, and times it found none. */
+  autoplay: z.object({
+    searches: z.number().int().nonnegative(),
+    searchCap: z.number().int().nonnegative(),
+    queued: z.number().int().nonnegative(),
+    stalled: z.number().int().nonnegative(),
+  }),
   /** Oldest first, one entry per day, including days without usage. */
   days: z.array(quotaDaySchema),
 });

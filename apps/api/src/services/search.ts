@@ -46,10 +46,14 @@ export function normalizeQuery(query: string): string {
 }
 
 const cachedResultsSchema = z.array(trackSchema);
+/** Autoplay's search counter is per Pacific day; this only needs to outlast it. */
+const AUTOPLAY_SEARCH_COUNT_TTL_SEC = 2 * 24 * 60 * 60;
 
 /** Which video plays each catalog song, once someone has added it. */
 export interface CatalogMatchStore {
   find(catalogId: string): Promise<string | null>;
+  /** The matched video of each song that has one. */
+  findMany(catalogIds: string[]): Promise<Map<string, string>>;
   /** Records the match and gives the video the song's title, artist and artwork. */
   save(song: CatalogTrack, videoId: string): Promise<void>;
 }
@@ -91,19 +95,22 @@ export function createSearchService({
 }: SearchServiceDeps) {
   const count = (name: Parameters<Metrics['incr']>[0]) => metrics?.incr(name);
 
-  async function search(userId: string, rawQuery: string): Promise<SearchResponse> {
-    if (!settings.get('features.search')) {
-      throw new SearchError('search_disabled', 'Search is turned off');
-    }
-    const query = normalizeQuery(rawQuery);
+  /**
+   * Results for `query` (normalized) from the cache, or from one YouTube search within the day's
+   * budget. `admit` runs only before a real search and throws to refuse it; it returns how to
+   * take the charge back when the search produced no answer.
+   */
+  async function cachedSearch(
+    query: string,
+    admit: () => Promise<() => Promise<unknown>>,
+  ): Promise<Track[]> {
     const cacheKey = `search:${query}`;
-
     const cached = await redis.get(cacheKey);
     if (cached) {
       try {
         const results = cachedResultsSchema.parse(JSON.parse(cached));
         await count('search_cache');
-        return { results };
+        return results;
       } catch {
         // An unreadable entry is treated as a miss and overwritten below.
       }
@@ -113,24 +120,35 @@ export function createSearchService({
     if ((await quota.get(date)).searchCalls >= settings.get('search.dailySearchCallBudget')) {
       throw budgetExhausted();
     }
-    // No daily cap per person; a burst limit keeps one person from using up the app's budget.
-    const key = `ratelimit:search:${userId}`;
-    if (!(await hit(redis, key, settings.get('limits.searchesPerMinute'), 60))) {
-      throw new SearchError('search_rate_limited', 'Slow down, try again in a minute');
-    }
+    const refund = await admit();
 
     let tracks: StoredTrack[];
     try {
       tracks = await youtube.search(query);
     } catch (err) {
-      // A search that never produced an answer shouldn't count against the user.
-      await redis.decr(key);
+      // A search that never produced an answer shouldn't count against whoever asked.
+      await refund();
       if (err instanceof YouTubeError && err.code === 'quota_exceeded') throw budgetExhausted();
       throw err;
     }
     await count('search_youtube');
     const results = tracks.map(toTrack);
     await redis.set(cacheKey, JSON.stringify(results), 'EX', settings.get('search.cacheTtlSec'));
+    return results;
+  }
+
+  async function search(userId: string, rawQuery: string): Promise<SearchResponse> {
+    if (!settings.get('features.search')) {
+      throw new SearchError('search_disabled', 'Search is turned off');
+    }
+    const results = await cachedSearch(normalizeQuery(rawQuery), async () => {
+      // No daily cap per person; a burst limit keeps one person from using up the app's budget.
+      const key = `ratelimit:search:${userId}`;
+      if (!(await hit(redis, key, settings.get('limits.searchesPerMinute'), 60))) {
+        throw new SearchError('search_rate_limited', 'Slow down, try again in a minute');
+      }
+      return () => redis.decr(key);
+    });
     return { results };
   }
 
@@ -242,6 +260,54 @@ export function createSearchService({
     }
   }
 
+  /** Which of the songs already have a video someone matched: those cost autoplay nothing. */
+  async function knownAmong(catalogIds: string[]): Promise<Set<string>> {
+    if (catalogIds.length === 0) return new Set();
+    return new Set((await matches.findMany(catalogIds)).keys());
+  }
+
+  /**
+   * The video for a song by one YouTube search, for autoplay once the free ways found nothing.
+   * Cached searches are free; real ones count toward `search.autoplaySearchesPerDay` and the
+   * app's daily budget. The match is remembered for everyone. `null` when refused or unmatched.
+   */
+  async function matchWithSearch(song: CatalogTrack): Promise<Track | null> {
+    if (!settings.get('features.catalogSearch') || !settings.get('features.search')) return null;
+    const query = normalizeQuery(`${song.artist} ${song.title}`);
+    let results: Track[];
+    try {
+      results = await cachedSearch(query, async () => {
+        const key = `autoplay:searches:${quotaDate(now())}`;
+        const cap = settings.get('search.autoplaySearchesPerDay');
+        if (!(await hit(redis, key, cap, AUTOPLAY_SEARCH_COUNT_TTL_SEC))) {
+          await redis.decr(key);
+          throw new SearchError('search_rate_limited', "Autoplay's searches for today are used up");
+        }
+        await count('search_autoplay');
+        return async () => {
+          await redis.decr(key);
+          await metrics?.incr('search_autoplay', -1);
+        };
+      });
+    } catch (err) {
+      if (err instanceof SearchError || err instanceof YouTubeError) return null;
+      throw err;
+    }
+    const match = pickMatch(song, results);
+    if (!match) {
+      await count('match_none');
+      return null;
+    }
+    await matches.save(song, match.videoId);
+    await count('match_search');
+    try {
+      return toTrack((await youtube.getVideos([match.videoId])).get(match.videoId) ?? match);
+    } catch (err) {
+      if (err instanceof YouTubeError) return match;
+      throw err;
+    }
+  }
+
   /**
    * The video for a catalog song. A song someone already added is free; otherwise the link
    * sources are asked, and only then is one YouTube search run (with the usual limits). The match
@@ -272,7 +338,7 @@ export function createSearchService({
     return { status: 'matched', track: toTrack(track) };
   }
 
-  return { search, suggest, charts, resolve, matchWithoutSearch };
+  return { search, suggest, charts, resolve, matchWithoutSearch, matchWithSearch, knownAmong };
 }
 
 export type SearchService = ReturnType<typeof createSearchService>;

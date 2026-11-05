@@ -168,13 +168,12 @@ export function createPlaylistService({
   }
 
   /** Ids from `videoIds` that can be played, in order: known to YouTube, embeddable and not live. */
-  async function playable(videoIds: string[], userId: string): Promise<string[]> {
+  async function playable(videoIds: string[]): Promise<string[]> {
     let found;
     try {
-      found = await youtube.getVideos(videoIds, userId);
+      found = await youtube.getVideos(videoIds);
     } catch (err) {
       if (err instanceof YouTubeError) {
-        if (err.code === 'user_limit') throw new PlaylistError('rate_limited', err.message);
         throw new PlaylistError('youtube_unavailable', youtubeFailureMessage(err));
       }
       throw err;
@@ -249,7 +248,7 @@ export function createPlaylistService({
 
     async addVideos(userId: string, playlistId: string, videoIds: string[]): Promise<AddResult> {
       await findOwned(userId, playlistId);
-      const ok = await playable(videoIds, userId);
+      const ok = await playable(videoIds);
       const { added } = await append(playlistId, ok);
       return addResult(await findOwned(userId, playlistId), added, new Set(videoIds).size);
     },
@@ -345,16 +344,15 @@ export function createPlaylistService({
       const max = Math.min(settings.get('limits.maxPlaylistImportItems'), MAX_PLAYLIST_ITEMS);
       let ids: string[];
       try {
-        ids = await youtube.getPlaylistVideoIds(listId, max, userId);
+        ids = await youtube.getPlaylistVideoIds(listId, max);
       } catch (err) {
         if (err instanceof YouTubeError) {
           if (err.code === 'not_found') throw new PlaylistError('import_not_found', err.message);
-          if (err.code === 'user_limit') throw new PlaylistError('rate_limited', err.message);
           throw new PlaylistError('youtube_unavailable', youtubeFailureMessage(err));
         }
         throw err;
       }
-      const ok = await playable(ids, userId);
+      const ok = await playable(ids);
       if (ok.length === 0) {
         throw new PlaylistError('nothing_to_import', 'No playable videos in that playlist');
       }

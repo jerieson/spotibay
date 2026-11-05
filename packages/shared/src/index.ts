@@ -11,6 +11,7 @@ export * from './rooms.js';
 export * from './search.js';
 export * from './settings.js';
 export * from './socket-events.js';
+export * from './vibes.js';
 export * from './youtube-url.js';
 
 export const healthResponseSchema = z.object({

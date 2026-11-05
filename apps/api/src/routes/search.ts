@@ -8,6 +8,8 @@ import {
   type SearchErrorCode,
   type SearchQuery,
   type SuggestResponse,
+  vibeIdSchema,
+  type VibeResponse,
 } from '@spotibay/shared';
 import { validateBody, validateQuery } from '../lib/validate.js';
 import { logger } from '../logger.js';
@@ -15,6 +17,7 @@ import { requireUser } from '../middleware/session.js';
 import { CatalogError } from '../services/catalog.js';
 import type { RecommendationService } from '../services/recommendations.js';
 import { SearchError, type SearchService } from '../services/search.js';
+import type { VibeService } from '../services/vibes.js';
 import { YouTubeError } from '../services/youtube.js';
 
 const statusByCode: Record<SearchErrorCode, number> = {
@@ -50,9 +53,11 @@ export interface SearchRouterDeps {
   search: SearchService;
   /** Mounts `GET /recommendations` when provided. */
   recommendations?: Pick<RecommendationService, 'enabled' | 'forUser'>;
+  /** Mounts `GET /vibes/:id` when provided. */
+  vibes?: Pick<VibeService, 'enabled' | 'forVibe'>;
 }
 
-export function createSearchRouter({ search, recommendations }: SearchRouterDeps) {
+export function createSearchRouter({ search, recommendations, vibes }: SearchRouterDeps) {
   const router = Router();
 
   router.get('/search', requireUser, validateQuery(searchQuerySchema), async (req, res) => {
@@ -106,6 +111,33 @@ export function createSearchRouter({ search, recommendations }: SearchRouterDeps
         res.status(statusByCode.catalog_unavailable).json({
           error: 'catalog_unavailable',
           message: 'Suggestions are busy right now. Try again in a moment.',
+        });
+      }
+    });
+  }
+
+  if (vibes) {
+    router.get('/vibes/:id', requireUser, async (req, res) => {
+      const id = vibeIdSchema.safeParse(req.params.id);
+      if (!id.success) {
+        res.status(404).json({ error: 'not_found', message: 'No such vibe' });
+        return;
+      }
+      if (!vibes.enabled()) {
+        res.status(statusByCode.catalog_disabled).json({
+          error: 'catalog_disabled',
+          message: 'Song suggestions are turned off',
+        });
+        return;
+      }
+      try {
+        const body: VibeResponse = { suggestions: await vibes.forVibe(id.data, req.user!.id) };
+        res.json(body);
+      } catch (err) {
+        if (!(err instanceof CatalogError)) throw err;
+        res.status(statusByCode.catalog_unavailable).json({
+          error: 'catalog_unavailable',
+          message: 'Songs for this vibe are busy right now. Try again in a moment.',
         });
       }
     });

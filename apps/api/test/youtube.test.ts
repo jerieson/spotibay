@@ -113,7 +113,6 @@ describe('YouTube service', () => {
       failBody?: unknown;
       /** Ids the fake API doesn't know. */
       unknown?: string[];
-      chargeLookup?: (userId: string) => Promise<boolean>;
     } = {},
   ) {
     const stored = new Map<string, StoredTrack>();
@@ -149,7 +148,6 @@ describe('YouTube service', () => {
         add: async (d, u, s) => void quota.push([d, u, s]),
         get: async () => ({ units: 0, searchCalls: 0 }),
       },
-      chargeLookup: opts.chargeLookup,
       quotaFlag: {
         isSet: async (date) => flagged.has(date),
         set: async (date) => void flagged.add(date),
@@ -211,24 +209,6 @@ describe('YouTube service', () => {
     advance(61 * 60 * 1000);
     await service.getVideos(['nnnnnnnnnnn']);
     expect(calls).toHaveLength(2);
-  });
-
-  it('charges each call to the person who caused it and stops at their cap', async () => {
-    const charged: string[] = [];
-    const { service, calls } = setup({
-      chargeLookup: async (userId) => {
-        charged.push(userId);
-        return charged.length <= 1;
-      },
-    });
-    await service.getVideos(['aaaaaaaaaaa'], 'u1');
-    // Stored tracks cost nothing, so they don't need a charge.
-    await service.getVideos(['aaaaaaaaaaa'], 'u1');
-    expect(charged).toEqual(['u1']);
-    await expect(service.getVideos(['bbbbbbbbbbb'], 'u1')).rejects.toMatchObject({
-      code: 'user_limit',
-    });
-    expect(calls).toHaveLength(1);
   });
 
   it('fails clearly without a key or when the API errors', async () => {

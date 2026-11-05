@@ -34,7 +34,8 @@ YouTube's API allows 10,000 units a day, and each typed search costs 100. To str
 
 - A suggested song someone has already added is free for everyone after.
 - New suggested songs are looked up on [MusicBrainz](https://musicbrainz.org) by their ISRC first, which costs no search. Only some songs have their YouTube upload listed there.
-- With an `ODESLI_API_KEY` (ask developers@song.link), [Odesli](https://odesli.co) is asked too, which knows far more songs.
+- With an `ODESLI_API_KEY` (ask developers@song.link), [Odesli](https://odesli.co) is asked too, which knows far more songs. Strongly recommended: every song it matches saves a 100-unit search.
+- Autoplay uses free matches first and may spend only a few searches a day on songs nobody has matched yet (admin setting `search.autoplaySearchesPerDay`, default 15).
 - When the day's quota runs out, songs already in Spotibay keep working, and search says when it comes back (midnight Pacific Time).
 - For more headroom, ask Google for a higher limit with the [YouTube API quota extension form](https://support.google.com/youtube/contact/yt_api_form). Don't spread the load over several API keys: YouTube's developer policies forbid it.
 
@@ -45,4 +46,4 @@ Spotibay is a personal, self-hosted project.
 ## Credits
 
 - Reaction emoji: [Noto Emoji Animation](https://googlefonts.github.io/noto-emoji-animation/) by Google, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Resized for the web.
-- Song info: [Deezer](https://www.deezer.com). Top songs chart: [Apple Music](https://music.apple.com). Song links: [MusicBrainz](https://musicbrainz.org) and [Odesli](https://odesli.co). GIFs and stickers: [KLIPY](https://klipy.com).
+- Song info: [Deezer](https://www.deezer.com). Top songs chart: [Apple Music](https://music.apple.com). Song links: [MusicBrainz](https://musicbrainz.org) and [Odesli](https://odesli.co). Similar songs: [Last.fm](https://www.last.fm). GIFs and stickers: [KLIPY](https://klipy.com).

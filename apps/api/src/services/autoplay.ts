@@ -1,3 +1,5 @@
+import type { CatalogTrack } from '@spotibay/shared';
+import type { Metrics } from '../lib/metrics.js';
 import type { SettingsService } from './settings.js';
 import type { PlaybackService } from './playback.js';
 import type { Presence } from './presence.js';
@@ -6,8 +8,10 @@ import type { RoomService } from './rooms.js';
 import type { SearchService } from './search.js';
 import { logger } from '../logger.js';
 
-/** Songs tried per fill. Matches someone already made are free; the rest ask the link sources. */
-const MAX_TRIES = 6;
+/** Songs per list asked of the link sources; songs someone already matched don't count. */
+const MAX_LINK_TRIES = 6;
+/** Songs a fill may spend a YouTube search on once nothing free was found (each is capped daily). */
+const MAX_SEARCH_TRIES = 2;
 /** Videos autoplay picked lately in a room, kept out so a skipped pick doesn't come straight back. */
 const RECENT_PICKS = 50;
 
@@ -15,16 +19,19 @@ export interface AutoplayServiceDeps {
   playback: Pick<PlaybackService, 'snapshot' | 'history' | 'addAutoplay' | 'onTrackChange'>;
   rooms: Pick<RoomService, 'findById' | 'onUpdated' | 'onClosed'>;
   presence: Pick<Presence, 'count'>;
-  recommendations: Pick<RecommendationService, 'forRoom'>;
-  matcher: Pick<SearchService, 'matchWithoutSearch'>;
+  recommendations: Pick<RecommendationService, 'forRoom' | 'forUser'>;
+  matcher: Pick<SearchService, 'matchWithoutSearch' | 'matchWithSearch' | 'knownAmong'>;
   settings: Pick<SettingsService, 'get'>;
+  metrics?: Pick<Metrics, 'incr'>;
   onError?: (err: unknown) => void;
 }
 
 /**
  * Keeps one song queued in rooms with autoplay on: when a track starts (or the room goes quiet)
- * with nothing after it, a song related to what the room played lately is queued, credited to the
- * host. Matching never runs a YouTube search, so autoplay costs at most a unit of quota per song.
+ * with nothing after it, a song is queued, credited to the host. Songs come from what the room
+ * played lately, then from the host's own suggestions (the top chart before they have any).
+ * Songs someone already matched to a video go first and cost nothing; then the link sources
+ * (a unit of quota at most); only then a YouTube search, within `search.autoplaySearchesPerDay`.
  */
 export function createAutoplayService({
   playback,
@@ -33,6 +40,7 @@ export function createAutoplayService({
   recommendations,
   matcher,
   settings,
+  metrics,
   onError = (err) => logger.error({ err }, 'autoplay failed'),
 }: AutoplayServiceDeps) {
   /** Rooms being filled now -> whether another fill was asked for meanwhile. */
@@ -42,6 +50,16 @@ export function createAutoplayService({
   function remember(roomId: string, videoId: string) {
     const picks = [...(recentPicks.get(roomId) ?? []), videoId];
     recentPicks.set(roomId, picks.slice(-RECENT_PICKS));
+  }
+
+  /** The host's suggestions; none when the catalog is busy (the room's list was tried first). */
+  async function hostSuggestions(ownerId: string): Promise<CatalogTrack[]> {
+    try {
+      return (await recommendations.forUser(ownerId)).suggestions;
+    } catch (err) {
+      logger.warn({ err }, "autoplay could not get the host's suggestions");
+      return [];
+    }
   }
 
   async function fillOnce(roomId: string): Promise<void> {
@@ -59,16 +77,47 @@ export function createAutoplayService({
     ]);
     if (state.item) skip.add(state.item.track.videoId);
 
-    let tries = 0;
-    for (const song of await recommendations.forRoom(roomId)) {
-      if (tries++ >= MAX_TRIES) return;
-      const track = await matcher.matchWithoutSearch(song);
-      if (!track || skip.has(track.videoId)) continue;
-      remember(roomId, track.videoId);
-      const added = await playback.addAutoplay(roomId, track.videoId);
+    /** Queues the video unless it was just played; `true` when the fill is done. */
+    async function offer(videoId: string): Promise<boolean> {
+      if (skip.has(videoId)) return false;
+      skip.add(videoId);
+      remember(roomId, videoId);
+      const added = await playback.addAutoplay(roomId, videoId);
+      if (added === 'unplayable') return false;
       // Queued, or no longer wanted (turned off, someone added a song): either way, done.
-      if (added !== 'unplayable') return;
+      if (typeof added !== 'string') await metrics?.incr('autoplay_queued');
+      return true;
     }
+
+    const seen = new Set<string>();
+    /** Songs no free source had a video for, in the order they were wanted. */
+    const unmatched: CatalogTrack[] = [];
+    for (const load of [
+      () => recommendations.forRoom(roomId),
+      () => hostSuggestions(room.ownerId),
+    ]) {
+      const songs = (await load()).filter((s) => !seen.has(s.id));
+      for (const s of songs) seen.add(s.id);
+      const known = await matcher.knownAmong(songs.map((s) => s.id));
+      const ordered = [
+        ...songs.filter((s) => known.has(s.id)),
+        ...songs.filter((s) => !known.has(s.id)),
+      ];
+      let linkTries = 0;
+      for (const song of ordered) {
+        if (!known.has(song.id) && linkTries++ >= MAX_LINK_TRIES) break;
+        const track = await matcher.matchWithoutSearch(song);
+        if (!track) unmatched.push(song);
+        else if (await offer(track.videoId)) return;
+      }
+    }
+
+    for (const song of unmatched.slice(0, MAX_SEARCH_TRIES)) {
+      const track = await matcher.matchWithSearch(song);
+      if (track && (await offer(track.videoId))) return;
+    }
+    await metrics?.incr('autoplay_none');
+    logger.info({ roomId, tried: seen.size }, 'autoplay found nothing to queue');
   }
 
   /**

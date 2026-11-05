@@ -17,6 +17,12 @@ export const metricNames = [
   'search_cache',
   /** A typed YouTube search sent to YouTube. */
   'search_youtube',
+  /** A YouTube search autoplay spent on a song nobody had matched (also in `search_youtube`). */
+  'search_autoplay',
+  /** Autoplay queued a song. */
+  'autoplay_queued',
+  /** Autoplay found nothing to queue: the room went quiet. */
+  'autoplay_none',
 ] as const;
 export type MetricName = (typeof metricNames)[number];
 
@@ -24,9 +30,9 @@ export type MetricName = (typeof metricNames)[number];
 export function createMetrics(redis: Redis, now: () => Date = () => new Date()) {
   const key = (date: string) => `metrics:${date}`;
 
-  async function incr(name: MetricName): Promise<void> {
+  async function incr(name: MetricName, by = 1): Promise<void> {
     const k = key(quotaDate(now()));
-    await redis.multi().hincrby(k, name, 1).expire(k, METRICS_TTL_SEC).exec();
+    await redis.multi().hincrby(k, name, by).expire(k, METRICS_TTL_SEC).exec();
   }
 
   async function get(date: string): Promise<Record<MetricName, number>> {
